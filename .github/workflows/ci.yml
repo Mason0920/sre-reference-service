@@ -62,10 +62,96 @@ jobs:
       - name: Build binary
         run: make build
 
-      - name: Upload binary artifact
+      - name: Build smoke test binary
+        run: make build-smoketest
+
+      - name: Upload server binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: hslee-${{ runner.os }}-${{ github.sha }}
           path: bin/hslee
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload smoketest binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoketest-${{ runner.os }}-${{ github.sha }}
+          path: bin/smoketest
+          if-no-files-found: error
+          retention-days: 1
+
+  smoke-test:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    needs: [build]
+    env:
+      LISTEN_ADDR: ":8080"
+      SMOKE_TEST_URL: "http://localhost:8080"
+    steps:
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: hslee-${{ runner.os }}-${{ github.sha }}
+          path: bin/
+
+      - name: Download smoketest binary
+        uses: actions/download-artifact@v4
+        with:
+          name: smoketest-${{ runner.os }}-${{ github.sha }}
+          path: bin/
+
+      - name: Make binaries executable
+        run: chmod +x bin/hslee bin/smoketest
+
+      - name: Start server
+        run: |
+          ./bin/hslee &
+          echo $! > server.pid
+
+      - name: Wait for server readiness
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
+              echo "Server is ready"
+              exit 0
+            fi
+            echo "Attempt ${i}/20: server not ready — retrying in 1s..."
+            sleep 1
+          done
+          echo "ERROR: server did not become ready within 20 seconds"
+          kill "$(cat server.pid)" 2>/dev/null || true
+          exit 1
+
+      - name: Run smoke tests
+        run: ./bin/smoketest --url "$SMOKE_TEST_URL"
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill "$(cat server.pid)" 2>/dev/null || true
+            rm -f server.pid
+          fi
+
+      - name: Notify Slack on failure
+        if: failure() && vars.SLACK_WEBHOOK_ENABLED == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          REPO="${GITHUB_REPOSITORY}"
+          RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsSL -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data "{
+              \"text\": \":x: *Smoke tests FAILED* on \`${GITHUB_REF_NAME}\` — commit \`${SHORT_SHA}\`\",
+              \"attachments\": [{
+                \"color\": \"danger\",
+                \"fields\": [
+                  {\"title\": \"Repository\", \"value\": \"${REPO}\", \"short\": true},
+                  {\"title\": \"Commit\",     \"value\": \"${SHORT_SHA}\",  \"short\": true},
+                  {\"title\": \"Run URL\",    \"value\": \"${RUN_URL}\",    \"short\": false}
+                ]
+              }]
+            }"

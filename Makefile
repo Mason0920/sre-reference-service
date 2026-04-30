@@ -62,9 +62,29 @@ build: ## Build production binary (injects version, commit, build time)
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
 
+.PHONY: build-smoketest
+build-smoketest: ## Build the smoke test runner binary
+	@mkdir -p $(BUILD_DIR)
+	$(GO) build -o $(BUILD_DIR)/smoketest ./cmd/smoketest
+
 .PHONY: clean
 clean: ## Remove build artifacts and coverage reports
 	@rm -rf $(BUILD_DIR) coverage.out coverage.html
+
+##@ Smoke Test
+
+SMOKE_URL ?= http://localhost:8080
+
+.PHONY: smoke-test
+smoke-test: build build-smoketest ## Run smoke tests against SMOKE_URL (starts server, runs tests, stops server)
+	@echo "Starting server on :8080..."
+	@LISTEN_ADDR=:8080 $(BUILD_DIR)/$(BINARY_NAME) & echo $$! > .server.pid
+	@sleep 2
+	@echo "Running smoke tests against $(SMOKE_URL)..."
+	@$(BUILD_DIR)/smoketest --url $(SMOKE_URL); STATUS=$$?; \
+		kill $$(cat .server.pid) 2>/dev/null || true; \
+		rm -f .server.pid; \
+		exit $$STATUS
 
 ##@ Help
 
