@@ -7,6 +7,12 @@ GO                    := go
 BINARY_NAME           := hslee
 BUILD_DIR             := bin
 
+VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
+BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+PKG        := main
+LDFLAGS    := -ldflags "-X '$(PKG).version=$(VERSION)' -X '$(PKG).commit=$(COMMIT)' -X '$(PKG).buildTime=$(BUILD_TIME)'"
+
 .DEFAULT_GOAL := help
 
 ##@ Development
@@ -52,9 +58,9 @@ test-cover: ## Run tests with coverage report
 ##@ Build
 
 .PHONY: build
-build: ## Build production binary
+build: ## Build production binary (injects version, commit, build time)
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build -o $(BUILD_DIR)/$(BINARY_NAME) ./...
+	$(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
 
 .PHONY: clean
 clean: ## Remove build artifacts and coverage reports

@@ -2,41 +2,102 @@
 
 ## Pipeline Overview
 
-_Describe the CI/CD setup, tooling (e.g., GitHub Actions), and overall strategy._
+GitHub Actions powers both CI and CD. CI runs on every PR and push to `main`; CD triggers automatically when CI succeeds on `main` (via `workflow_run`). Docker images are pushed to GitHub Container Registry (GHCR) and deployed to AWS EKS.
+
+```
+PR / push ──► CI (.github/workflows/ci.yml)
+                   lint → test → build
+                         │ all pass on main
+                         ▼
+              CD (.github/workflows/cd.yml)
+                   build-push → deploy-staging → smoke-test
+                                                      │ fail
+                                                      ▼
+                                                  rollback
+```
 
 ## CI Workflow
 
-Runs on: _PRs and pushes to main_
+File: `.github/workflows/ci.yml`  
+Runs on: PRs and pushes to `main`
 
-| Stage      | Trigger             | What it does                        |
-|------------|---------------------|-------------------------------------|
-| Lint       | _PR, push to main_  | _Run linter (e.g., ESLint)_        |
-| Test       | _PR, push to main_  | _Run test suite_                    |
-| Build      | _PR, push to main_  | _Compile/typecheck the project_     |
+| Stage | Tool | Failure behaviour |
+|-------|------|-------------------|
+| Lint  | `golangci-lint` v1.64.8 | Blocks merge |
+| Test  | `go test -race -count=1` | Blocks merge |
+| Build | `go build ./...` | Blocks merge |
 
 ## CD Workflow
 
-Runs on: _merge to main_
+File: `.github/workflows/cd.yml`  
+Runs on: `workflow_run` completion of CI on `main` (success only)
 
-| Stage      | Trigger             | What it does                        |
-|------------|---------------------|-------------------------------------|
-| Deploy     | _merge to main_     | _Deploy to target environment_      |
-| Smoke Test | _after deploy_      | _Verify deployment is healthy_      |
+| Stage | What it does |
+|-------|--------------|
+| Guard | Validates CI passed; exports `sha` and image tag |
+| Build & Push | Builds multi-stage Docker image; pushes to GHCR tagged with git SHA and `latest` |
+| Deploy → Staging | Updates `hslee` Deployment on the staging EKS cluster via `kubectl set image`; waits for rollout |
+| Smoke Test | `curl` health-check loop (5 attempts × 10 s) against `$STAGING_URL/health` |
+| Rollback | If smoke test fails: re-sets the Deployment to the previous image SHA |
 
-## Environment Variables
+## Environment Variables & Secrets
 
-| Variable   | Where set           | Purpose                             |
-|------------|---------------------|-------------------------------------|
-| _VAR_NAME_ | _GitHub Secrets_    | _Description_                       |
+Configure in GitHub → Settings → Secrets and variables → Actions.
+
+| Name | Kind | Purpose |
+|------|------|---------|
+| `AWS_ACCESS_KEY_ID` | Secret | IAM key for EKS/ECR access |
+| `AWS_SECRET_ACCESS_KEY` | Secret | IAM secret |
+| `AWS_REGION` | Variable | e.g. `ap-northeast-2` |
+| `EKS_CLUSTER_NAME_STAGING` | Variable | Staging EKS cluster name |
+| `K8S_NAMESPACE_STAGING` | Variable | Kubernetes namespace for staging |
+| `STAGING_URL` | Variable | Base URL for smoke-test health check |
+
+The CD workflow uses `GITHUB_TOKEN` (auto-injected) to push images to GHCR — no extra secret needed for the registry.
 
 ## Deployment Targets
 
-- **Production**: _URL or environment description_
-- **Staging**: _URL or environment description (if applicable)_
+| Environment | Trigger | Registry tag |
+|-------------|---------|--------------|
+| Staging | Automatic on every CI-passing main merge | `ghcr.io/<org>/<repo>:<git-sha>` |
+| Production | Manual promotion (future) | Promote the same SHA image |
 
 ## Rollback Procedure
 
-1. _Identify the failing deployment_
-2. _Revert the merge commit or re-deploy the previous known-good commit_
-3. _Verify rollback via smoke tests_
-4. _Investigate root cause before re-deploying the fix_
+### Automatic (smoke test failure)
+
+The `rollback` job runs automatically when `smoke-test` fails:
+
+1. Reads `previous_image` output recorded before the deploy.
+2. Runs `kubectl set image` to revert the Deployment.
+3. Waits for rollout to complete.
+4. Prints a summary (failed SHA + rolled-back image) to the GitHub Actions job summary.
+
+### Manual rollback
+
+```bash
+# Find the last-known-good SHA from GHCR or git log
+GOOD_SHA=<commit-sha>
+IMAGE="ghcr.io/<org>/<repo>:${GOOD_SHA}"
+
+kubectl set image deployment/hslee hslee="${IMAGE}" \
+  --namespace <staging-namespace>
+
+kubectl rollout status deployment/hslee \
+  --namespace <staging-namespace> --timeout=120s
+```
+
+Alternatively, use `kubectl rollout undo`:
+
+```bash
+kubectl rollout undo deployment/hslee --namespace <staging-namespace>
+```
+
+## Docker Image
+
+Dockerfile uses a two-stage build:
+
+1. **Builder** (`golang:1.21-alpine`): compiles the binary with `CGO_ENABLED=0`.
+2. **Final** (`distroless/static-debian12:nonroot`): minimal, non-root runtime image.
+
+Image labels include `org.opencontainers.image.revision` (git SHA) and `.source` (repo URL) for traceability.
