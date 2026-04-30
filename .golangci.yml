@@ -1,0 +1,134 @@
+# golangci-lint configuration
+# Version: 1.64.x
+# Philosophy: catch bugs, not style issues
+# Docs: https://golangci-lint.run/usage/configuration/
+
+linters:
+  disable-all: true
+  enable:
+    # --- Default linters (high signal, low noise) ---
+    # Unchecked errors are a major source of silent failures
+    - errcheck
+    # Go vet: detects common Go bugs (includes shadow, copylocks, printf, etc.)
+    - govet
+    # Detects ineffectual assignments: `err = foo()` where err is never read
+    - ineffassign
+    # SA* (staticcheck), S* (gosimple) — comprehensive static analysis
+    - staticcheck
+    # Finds unused constants, variables, functions, and types
+    - unused
+
+    # --- HTTP / networking ---
+    # HTTP response body must be closed; open bodies leak connections
+    - bodyclose
+    # HTTP requests without context.Context — prevents leaked goroutines
+    - noctx
+
+    # --- Database ---
+    # sql.Rows.Err() must be checked after iteration
+    - rowserrcheck
+
+    # --- Error handling ---
+    # Returns nil even though error is not nil (common subtle bug)
+    - nilerr
+    # Simultaneous nil-error + invalid-value return
+    - nilnil
+    # error.Is/As wrapping issues introduced in Go 1.13
+    - errorlint
+
+    # --- Type safety ---
+    # Unchecked type assertions: x.(T) panics at runtime if wrong
+    - forcetypeassert
+
+    # --- Duration math ---
+    # time.Duration multiplied by time.Duration — usually a bug
+    - durationcheck
+
+    # --- Slice initialization ---
+    # Appending to a nil slice seeded with a non-zero length
+    - makezero
+
+    # --- Memory / performance correctness ---
+    # Slice pre-allocation hints (flag only, no false-positive style nags)
+    - prealloc
+
+    # --- Diagnostics (bugs + performance; style disabled) ---
+    - gocritic
+
+    # --- Directive correctness ---
+    # //go:build, //go:generate etc. must be syntactically valid
+    - gocheckcompilerdirectives
+
+    # --- nolint hygiene ---
+    # Malformed //nolint directives are silently ignored by golangci-lint
+    - nolintlint
+
+linters-settings:
+  govet:
+    enable:
+      - shadow      # variable shadowing is a common source of bugs
+      - copylocks   # copying types that contain sync primitives
+      - printf      # printf-format mismatch
+      - structtag   # malformed struct tags
+      - assign      # useless assignments
+      - lostcancel  # context.WithCancel cancel func never called
+
+  errcheck:
+    # Deferred Close() calls are idiomatic; don't require explicit error check
+    exclude-functions:
+      - (io.Closer).Close
+      - (*os.File).Close
+      - (*bufio.Writer).Flush
+    check-type-assertions: true
+    check-blank: true
+
+  staticcheck:
+    checks:
+      - "all"
+      # Style checks — not bugs; exclude to avoid noise
+      - "-ST1000"   # package-level comment
+      - "-ST1003"   # naming conventions
+      - "-ST1020"   # comment formatting
+      - "-ST1021"   # comment formatting
+      - "-ST1022"   # comment formatting
+
+  gocritic:
+    # Only diagnostic checks (real bugs + correctness); skip style/performance
+    enabled-tags:
+      - diagnostic
+    disabled-tags:
+      - style
+      - opinionated
+
+  nolintlint:
+    # Require an explanation for each //nolint directive
+    require-explanation: true
+    require-specific: true
+
+  errorlint:
+    # Enforce error wrapping with %w in fmt.Errorf
+    errorf: true
+    errorf-multi: true
+    asserts: true
+    comparison: true
+
+issues:
+  # Show all issues (CI should see everything)
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # In tests: unchecked errors and type assertions are acceptable
+    - path: "_test\\.go"
+      linters:
+        - errcheck
+        - forcetypeassert
+        - gocritic
+
+  # Skip generated files
+  exclude-generated: lax
+
+run:
+  timeout: 5m
+  # Exit 1 on any lint issue — enforced in CI
+  issues-exit-code: 1
