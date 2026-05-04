@@ -796,7 +796,7 @@
           "refId": "A"
         }
       ],
-      "title": "p95 Latency (SLO: < 500ms)",
+      "title": "p95 Latency (SLO: < 300ms)",
       "type": "gauge"
     },
     {
@@ -863,7 +863,7 @@
           "refId": "A"
         }
       ],
-      "title": "p99 Latency (SLO: < 2s)",
+      "title": "p99 Latency (SLO: < 500ms)",
       "type": "gauge"
     },
     {

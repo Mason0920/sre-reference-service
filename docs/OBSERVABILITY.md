@@ -87,7 +87,7 @@ Loki-backed log explorer with service and level filters. Correlates with traces 
 |-------|-----------|----------|
 | `HighErrorRate` | 5xx error rate > 1% for 5m | warning |
 | `EndpointDown` | `probe_success == 0` for 1m | critical |
-| `HighLatencyP95` | p95 latency > 500ms for 5m | warning |
+| `HighLatencyP95` | p95 latency > 300ms for 5m | warning |
 | `HighLatencyP99` | p99 latency > 500ms for 5m | critical |
 
 ### `prometheus/rules/alerting.yml` — Infrastructure Alerts
