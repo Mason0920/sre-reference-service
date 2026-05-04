@@ -4,6 +4,7 @@ volumes:
   prometheus_data: {}
   grafana_data: {}
   loki_data: {}
+  jaeger_data: {}
 
 networks:
   monitoring:
@@ -52,6 +53,7 @@ services:
     depends_on:
       - prometheus
       - loki
+      - jaeger
 
   node-exporter:
     image: prom/node-exporter:v1.7.0
@@ -124,5 +126,20 @@ services:
     command: -config.file=/etc/promtail/config.yml
     depends_on:
       - loki
+    networks:
+      - monitoring
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.56
+    container_name: jaeger
+    restart: unless-stopped
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    volumes:
+      - jaeger_data:/badger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
     networks:
       - monitoring
