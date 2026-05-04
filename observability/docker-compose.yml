@@ -135,11 +135,15 @@ services:
     restart: unless-stopped
     environment:
       - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=badger
+      - BADGER_EPHEMERAL=false
+      - BADGER_DIRECTORY_VALUE=/badger
+      - BADGER_DIRECTORY_KEY=/badger
     volumes:
       - jaeger_data:/badger
     ports:
       - "16686:16686"
-      - "4317:4317"
-      - "4318:4318"
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
     networks:
       - monitoring

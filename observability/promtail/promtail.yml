@@ -31,8 +31,10 @@ scrape_configs:
           expressions:
             level: level
             msg: msg
+            service_name: service_name
       - labels:
           level:
+          service_name:
       # Drop empty lines
       - drop:
           expression: "^\\s*$"

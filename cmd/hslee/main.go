@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -38,7 +39,10 @@ func initTracer(ctx context.Context, serviceName string) (func(context.Context) 
 		endpoint = "localhost:4317"
 	}
 
-	exporter, err := otlptracegrpc.New(ctx,
+	// Use a bounded timeout so startup doesn't hang when the OTLP endpoint is unreachable.
+	dialCtx, dialCancel := context.WithTimeout(ctx, 3*time.Second)
+	defer dialCancel()
+	exporter, err := otlptracegrpc.New(dialCtx,
 		otlptracegrpc.WithEndpoint(endpoint),
 		otlptracegrpc.WithInsecure(),
 	)
@@ -47,6 +51,8 @@ func initTracer(ctx context.Context, serviceName string) (func(context.Context) 
 	}
 
 	res, err := resource.New(ctx,
+		resource.WithProcess(),
+		resource.WithHost(),
 		resource.WithAttributes(
 			semconv.ServiceName(serviceName),
 			semconv.ServiceVersion(version),
@@ -59,7 +65,7 @@ func initTracer(ctx context.Context, serviceName string) (func(context.Context) 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(res),
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSampler(buildSampler()),
 	)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
@@ -68,6 +74,44 @@ func initTracer(ctx context.Context, serviceName string) (func(context.Context) 
 	))
 
 	return tp.Shutdown, nil
+}
+
+// buildSampler returns a sampler configured via OTEL_TRACES_SAMPLER_ARG (0.0–1.0 ratio).
+// Defaults to AlwaysSample when the env var is absent or invalid.
+func buildSampler() sdktrace.Sampler {
+	arg := os.Getenv("OTEL_TRACES_SAMPLER_ARG")
+	if arg == "" {
+		return sdktrace.AlwaysSample()
+	}
+	r, err := strconv.ParseFloat(arg, 64)
+	if err != nil || r < 0 || r > 1 {
+		return sdktrace.AlwaysSample()
+	}
+	return sdktrace.ParentBased(sdktrace.TraceIDRatioBased(r))
+}
+
+// mapCarrier implements propagation.TextMapCarrier for generic map-based message
+// headers (Kafka, NATS, Redis Streams, etc.).
+type mapCarrier map[string]string
+
+func (m mapCarrier) Get(key string) string        { return m[key] }
+func (m mapCarrier) Set(key string, value string) { m[key] = value }
+func (m mapCarrier) Keys() []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// InjectTraceContext injects the current span context into message headers.
+func InjectTraceContext(ctx context.Context, headers map[string]string) {
+	otel.GetTextMapPropagator().Inject(ctx, mapCarrier(headers))
+}
+
+// ExtractTraceContext extracts a remote span context from message headers.
+func ExtractTraceContext(ctx context.Context, headers map[string]string) context.Context {
+	return otel.GetTextMapPropagator().Extract(ctx, mapCarrier(headers))
 }
 
 // traceLogMiddleware injects trace_id and span_id into the request-scoped logger.
@@ -110,6 +154,7 @@ func main() {
 	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	logger = slog.New(handler).With(
 		"service", "hslee",
+		"service_name", "hslee",
 		"version", version,
 		"commit", commit,
 	)
@@ -118,17 +163,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	shutdown, err := initTracer(ctx, "hslee")
-	if err != nil {
+	var shutdown func(context.Context) error
+	if tracerShutdown, err := initTracer(ctx, "hslee"); err != nil {
 		logger.Warn("tracing disabled - running without distributed tracing", "error", err)
 	} else {
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := shutdown(shutdownCtx); err != nil {
-				logger.Error("tracer shutdown error", "error", err)
-			}
-		}()
+		shutdown = tracerShutdown
 		logger.Info("OpenTelemetry tracer initialized",
 			"endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
 	}
@@ -174,6 +213,15 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("server shutdown error", "error", err)
+	}
+
+	// Flush in-flight spans only after the HTTP server has fully drained.
+	if shutdown != nil {
+		tracerCtx, tracerCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer tracerCancel()
+		if err := shutdown(tracerCtx); err != nil {
+			logger.Error("tracer shutdown error", "error", err)
+		}
 	}
 }
 
