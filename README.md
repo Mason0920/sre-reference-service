@@ -1,5 +1,8 @@
 # hslee — SRE Foundation Project
 
+[![CI](https://github.com/hslee/hslee/actions/workflows/ci.yml/badge.svg)](https://github.com/hslee/hslee/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-60%25%20minimum-brightgreen)](#)
+
 This repository establishes the SRE foundation for the `hslee` company: automated CI/CD pipeline, code quality enforcement, testing infrastructure, and deployment automation.
 
 ## Goals
