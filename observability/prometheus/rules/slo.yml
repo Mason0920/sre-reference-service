@@ -1,0 +1,70 @@
+groups:
+  - name: slo.availability
+    interval: 30s
+    rules:
+      - record: job:http_requests_total:rate5m
+        expr: rate(http_requests_total[5m])
+
+      - record: job:http_errors_total:rate5m
+        expr: rate(http_requests_total{status=~"5.."}[5m])
+
+      - record: job:http_error_ratio:rate5m
+        expr: |
+          job:http_errors_total:rate5m
+          /
+          job:http_requests_total:rate5m
+
+      - record: job:probe_success:avg5m
+        expr: avg_over_time(probe_success[5m])
+
+  - name: slo.latency
+    interval: 30s
+    rules:
+      - record: job:http_request_duration_p50:rate5m
+        expr: histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))
+
+      - record: job:http_request_duration_p95:rate5m
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+
+      - record: job:http_request_duration_p99:rate5m
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))
+
+  - name: alerts.availability
+    rules:
+      - alert: HighErrorRate
+        expr: job:http_error_ratio:rate5m > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.job }}"
+          description: "Error rate is {{ $value | humanizePercentage }} over last 5m"
+
+      - alert: EndpointDown
+        expr: probe_success == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Endpoint {{ $labels.instance }} is down"
+          description: "Blackbox probe failed for {{ $labels.instance }}"
+
+  - name: alerts.latency
+    rules:
+      - alert: HighLatencyP95
+        expr: job:http_request_duration_p95:rate5m > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency on {{ $labels.job }}"
+          description: "p95 latency is {{ $value }}s (threshold: 0.5s)"
+
+      - alert: HighLatencyP99
+        expr: job:http_request_duration_p99:rate5m > 1.0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical p99 latency on {{ $labels.job }}"
+          description: "p99 latency is {{ $value }}s (threshold: 1.0s)"
