@@ -12,7 +12,7 @@ groups:
         expr: |
           job:http_errors_total:rate5m
           /
-          job:http_requests_total:rate5m
+          (job:http_requests_total:rate5m > 0)
 
       - record: job:probe_success:avg5m
         expr: avg_over_time(probe_success[5m])
