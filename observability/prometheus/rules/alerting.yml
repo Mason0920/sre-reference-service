@@ -1,4 +1,15 @@
 groups:
+  - name: alerts.uptime
+    rules:
+      - alert: HealthCheckFailed
+        expr: probe_success == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Health check failing for {{ $labels.instance }}"
+          description: "Endpoint {{ $labels.instance }} has failed 2+ consecutive probes. Service may be down."
+
   - name: alerts.kubernetes
     rules:
       - alert: PodRestartingTooOften

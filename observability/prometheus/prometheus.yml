@@ -36,6 +36,7 @@ scrape_configs:
         replacement: hslee-app
 
   - job_name: blackbox-http
+    scrape_interval: 30s
     metrics_path: /probe
     params:
       module:
