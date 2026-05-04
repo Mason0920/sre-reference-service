@@ -139,10 +139,30 @@ All PRs must pass:
 
 CI failures block merge. Fix CI before requesting review.
 
+## Branch Protection (main)
+
+The `main` branch is protected by GitHub branch protection rules. Rules are applied
+via `scripts/setup-branch-protection.sh` and enforced for all contributors including
+repository admins.
+
+| Rule | Setting |
+|------|---------|
+| Required status checks | `Lint`, `Test`, `Build`, `Smoke Test` (CI workflow) |
+| Up-to-date branch required | Yes — branch must be current with `main` before merge |
+| Required approvals | 1 — stale review dismissal enabled |
+| Force pushes | **Disabled** |
+| Branch deletion | **Disabled** |
+| Conversation resolution | Required before merge |
+| Admin enforcement | Enforced — no bypass |
+
+PRs that do not satisfy all of the above cannot be merged. The CD pipeline runs only
+after CI passes, so any merge that bypasses these checks would skip automated
+deployment.
+
 ## Merge Rules
 
 - Code Reviewer and Product Owner must both approve
-- CI must be green
+- CI must be green (all four status checks must pass)
 - No force pushes to `main`
 - No squash or rebase — use merge commits to preserve history
 - Engineer is always the merge owner; reviewers do not merge
