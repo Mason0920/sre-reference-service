@@ -7,7 +7,10 @@ ALERTMANAGER_URL="${1:-http://localhost:9093}"
 
 echo "Sending synthetic test alert to ${ALERTMANAGER_URL}..."
 
-PAYLOAD=$(cat <<'EOF'
+STARTS_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+ENDS_AT="$(date -u -v+10M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '+10 minutes' +%Y-%m-%dT%H:%M:%SZ)"
+
+PAYLOAD=$(cat <<EOF
 [
   {
     "labels": {
@@ -21,8 +24,8 @@ PAYLOAD=$(cat <<'EOF'
       "summary": "Synthetic test alert — Alertmanager → Slack routing verified",
       "description": "This alert was fired manually via scripts/test-alert.sh to verify alerting pipeline integration."
     },
-    "startsAt": "",
-    "endsAt": ""
+    "startsAt": "${STARTS_AT}",
+    "endsAt": "${ENDS_AT}"
   }
 ]
 EOF
