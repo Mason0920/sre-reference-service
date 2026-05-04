@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 )
@@ -15,7 +15,29 @@ var (
 	buildTime = "unknown"
 )
 
+var logger *slog.Logger
+
 func main() {
+	var level slog.Level
+	switch os.Getenv("LOG_LEVEL") {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	logger = slog.New(handler).With(
+		"service", "hslee",
+		"version", version,
+		"commit", commit,
+	)
+	slog.SetDefault(logger)
+
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = ":8080"
@@ -25,32 +47,37 @@ func main() {
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/version", versionHandler)
 
-	log.Printf("hslee server listening on %s (version=%s commit=%s built=%s)", addr, version, commit, buildTime)
+	logger.Info("server starting", "addr", addr, "built", buildTime)
 
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: mux,
 	}
 	if err := srv.ListenAndServe(); err != nil {
+		logger.Error("server failed", "error", err)
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func healthHandler(w http.ResponseWriter, _ *http.Request) {
+func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
-		log.Printf("health handler: encode error: %v", err)
+		logger.Error("health handler encode error", "error", err)
+		return
 	}
+	logger.Debug("health check", "remote_addr", r.RemoteAddr)
 }
 
-func versionHandler(w http.ResponseWriter, _ *http.Request) {
+func versionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"version":   version,
 		"commit":    commit,
 		"buildTime": buildTime,
 	}); err != nil {
-		log.Printf("version handler: encode error: %v", err)
+		logger.Error("version handler encode error", "error", err)
+		return
 	}
+	logger.Debug("version requested", "remote_addr", r.RemoteAddr)
 }

@@ -61,10 +61,10 @@ groups:
           description: "p95 latency is {{ $value }}s (threshold: 0.5s)"
 
       - alert: HighLatencyP99
-        expr: job:http_request_duration_p99:rate5m > 1.0
+        expr: job:http_request_duration_p99:rate5m > 0.5
         for: 5m
         labels:
           severity: critical
         annotations:
           summary: "Critical p99 latency on {{ $labels.job }}"
-          description: "p99 latency is {{ $value }}s (threshold: 1.0s)"
+          description: "p99 latency is {{ $value }}s (threshold: 500ms)"
