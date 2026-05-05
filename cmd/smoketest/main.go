@@ -63,6 +63,7 @@ func main() {
 	fmt.Println()
 	if failed {
 		fmt.Fprintln(os.Stderr, "Smoke tests FAILED")
+		cancel()
 		os.Exit(1)
 	}
 	fmt.Println("Smoke tests PASSED")
