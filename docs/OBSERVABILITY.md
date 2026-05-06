@@ -187,3 +187,20 @@ docker compose down -v
 - **CI/CD**: GitHub Actions workflow publishes metrics via OTLP on test runs.
 - **Kubernetes**: `alerting.yml` includes pod restart alerts compatible with `kube-state-metrics`.
 - **Loki + Grafana**: Log lines linked to traces via `traceId` field extracted by Promtail pipeline.
+
+## Runbooks
+
+Incident response runbooks for every alert rule are in [`docs/runbooks/`](./runbooks/README.md).
+
+| Alert | Severity | Runbook |
+|-------|----------|---------|
+| `HealthCheckFailed` | critical | [HealthCheckFailed.md](./runbooks/HealthCheckFailed.md) |
+| `PodRestartingTooOften` | warning | [PodRestartingTooOften.md](./runbooks/PodRestartingTooOften.md) |
+| `HighDiskUsage` | warning | [HighDiskUsage.md](./runbooks/HighDiskUsage.md) |
+| `HighDiskUsageCritical` | critical | [HighDiskUsageCritical.md](./runbooks/HighDiskUsageCritical.md) |
+| `HighMemoryUsage` | warning | [HighMemoryUsage.md](./runbooks/HighMemoryUsage.md) |
+| `HighMemoryUsageCritical` | critical | [HighMemoryUsageCritical.md](./runbooks/HighMemoryUsageCritical.md) |
+| `HighErrorRate` | warning | [HighErrorRate.md](./runbooks/HighErrorRate.md) |
+| `EndpointDown` | critical | [EndpointDown.md](./runbooks/EndpointDown.md) |
+| `HighLatencyP95` | warning | [HighLatencyP95.md](./runbooks/HighLatencyP95.md) |
+| `HighLatencyP99` | critical | [HighLatencyP99.md](./runbooks/HighLatencyP99.md) |

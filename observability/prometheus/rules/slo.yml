@@ -39,6 +39,7 @@ groups:
         annotations:
           summary: "High error rate on {{ $labels.job }}"
           description: "Error rate is {{ $value | humanizePercentage }} over last 5m"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighErrorRate.md"
 
       - alert: EndpointDown
         expr: probe_success == 0
@@ -48,6 +49,7 @@ groups:
         annotations:
           summary: "Endpoint {{ $labels.instance }} is down"
           description: "Blackbox probe failed for {{ $labels.instance }}"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/EndpointDown.md"
 
   - name: alerts.latency
     rules:
@@ -59,6 +61,7 @@ groups:
         annotations:
           summary: "High p95 latency on {{ $labels.job }}"
           description: "p95 latency is {{ $value }}s (threshold: 300ms)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighLatencyP95.md"
 
       - alert: HighLatencyP99
         expr: job:http_request_duration_p99:rate5m > 0.5
@@ -68,3 +71,4 @@ groups:
         annotations:
           summary: "Critical p99 latency on {{ $labels.job }}"
           description: "p99 latency is {{ $value }}s (threshold: 500ms)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighLatencyP99.md"

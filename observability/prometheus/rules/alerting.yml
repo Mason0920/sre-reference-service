@@ -9,6 +9,7 @@ groups:
         annotations:
           summary: "Health check failing for {{ $labels.instance }}"
           description: "Endpoint {{ $labels.instance }} has failed 2+ consecutive probes. Service may be down."
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HealthCheckFailed.md"
 
   - name: alerts.kubernetes
     rules:
@@ -20,6 +21,7 @@ groups:
         annotations:
           summary: "Pod {{ $labels.pod }} restarting too often"
           description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} restarted {{ $value | humanize }} times in last 5m (threshold: 3)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/PodRestartingTooOften.md"
 
   - name: alerts.infrastructure
     rules:
@@ -35,6 +37,7 @@ groups:
         annotations:
           summary: "High disk usage on {{ $labels.instance }}"
           description: "Disk {{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | humanizePercentage }} full (threshold: 85%)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighDiskUsage.md"
 
       - alert: HighDiskUsageCritical
         expr: |
@@ -48,6 +51,7 @@ groups:
         annotations:
           summary: "Critical disk usage on {{ $labels.instance }}"
           description: "Disk {{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | humanizePercentage }} full (threshold: 95%)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighDiskUsageCritical.md"
 
       - alert: HighMemoryUsage
         expr: |
@@ -60,6 +64,7 @@ groups:
         annotations:
           summary: "High memory usage on {{ $labels.instance }}"
           description: "Memory usage on {{ $labels.instance }} is {{ $value | humanizePercentage }} (threshold: 85%)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighMemoryUsage.md"
 
       - alert: HighMemoryUsageCritical
         expr: |
@@ -72,3 +77,4 @@ groups:
         annotations:
           summary: "Critical memory usage on {{ $labels.instance }}"
           description: "Memory usage on {{ $labels.instance }} is {{ $value | humanizePercentage }} (threshold: 95%)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighMemoryUsageCritical.md"
