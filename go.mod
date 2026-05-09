@@ -1,6 +1,6 @@
 module github.com/hslee/hslee
 
-go 1.26.2
+go 1.26.3
 
 require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
