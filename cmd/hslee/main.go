@@ -15,21 +15,24 @@ var (
 	buildTime = "unknown"
 )
 
+func newServeMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/version", versionHandler)
+	return mux
+}
+
 func main() {
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = ":8080"
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthHandler)
-	mux.HandleFunc("/version", versionHandler)
-
 	log.Printf("hslee server listening on %s (version=%s commit=%s built=%s)", addr, version, commit, buildTime)
 
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: newServeMux(),
 	}
 	if err := srv.ListenAndServe(); err != nil {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
