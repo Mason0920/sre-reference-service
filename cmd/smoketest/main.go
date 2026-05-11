@@ -63,6 +63,7 @@ func main() {
 	fmt.Println()
 	if failed {
 		fmt.Fprintln(os.Stderr, "Smoke tests FAILED")
+		cancel()
 		os.Exit(1)
 	}
 	fmt.Println("Smoke tests PASSED")
@@ -83,7 +84,7 @@ func (s *smokeRunner) checkHealth(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected HTTP status %d (want 200)", resp.StatusCode)
@@ -112,7 +113,7 @@ func (s *smokeRunner) checkVersion(ctx context.Context, expected string) error {
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected HTTP status %d (want 200)", resp.StatusCode)

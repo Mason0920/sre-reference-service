@@ -1,0 +1,12 @@
+{{ define "slack.hslee.title" -}}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }} | {{ .GroupLabels.severity | toUpper }}
+{{- end }}
+
+{{ define "slack.hslee.text" -}}
+{{ range .Alerts -}}
+*Alert:* {{ .Annotations.summary }}
+*Severity:* `{{ .Labels.severity }}`
+*Environment:* `{{ .Labels.environment | default "unknown" }}`
+{{ if .Annotations.runbook_url }}*Runbook:* <{{ .Annotations.runbook_url }}|View Runbook>{{ end }}
+{{ end -}}
+{{- end }}

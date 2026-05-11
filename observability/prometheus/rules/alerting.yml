@@ -1,0 +1,68 @@
+groups:
+  - name: alerts.kubernetes
+    rules:
+      - alert: PodRestartingTooOften
+        expr: increase(kube_pod_container_status_restarts_total[5m]) > 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.pod }} restarting too often"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} restarted {{ $value | humanize }} times in last 5m (threshold: 3)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/PodRestartingTooOften.md"
+
+  - name: alerts.infrastructure
+    rules:
+      - alert: HighDiskUsage
+        expr: |
+          (
+            node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}
+            - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+          ) / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}"
+          description: "Disk {{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | humanizePercentage }} full (threshold: 85%)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighDiskUsage.md"
+
+      - alert: HighDiskUsageCritical
+        expr: |
+          (
+            node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}
+            - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+          ) / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} > 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical disk usage on {{ $labels.instance }}"
+          description: "Disk {{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | humanizePercentage }} full (threshold: 95%)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighDiskUsageCritical.md"
+
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes
+          ) / node_memory_MemTotal_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage on {{ $labels.instance }} is {{ $value | humanizePercentage }} (threshold: 85%)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighMemoryUsage.md"
+
+      - alert: HighMemoryUsageCritical
+        expr: |
+          (
+            node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes
+          ) / node_memory_MemTotal_bytes > 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical memory usage on {{ $labels.instance }}"
+          description: "Memory usage on {{ $labels.instance }} is {{ $value | humanizePercentage }} (threshold: 95%)"
+          runbook_url: "https://github.com/Hslee/Hslee/blob/main/docs/runbooks/HighMemoryUsageCritical.md"

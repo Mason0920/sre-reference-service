@@ -16,6 +16,24 @@ PR / push ──► CI (.github/workflows/ci.yml)
                                                   rollback
 ```
 
+## Branch Protection
+
+`main` is protected. Rules enforced via `scripts/setup-branch-protection.sh`.
+
+| Rule | Value |
+|------|-------|
+| Required status checks | `Lint`, `Test`, `Build`, `Smoke Test` |
+| Up-to-date branch | Required (strict mode) |
+| Required approvals | 1 (stale review dismissal on) |
+| Force pushes | Disabled |
+| Branch deletion | Disabled |
+| Admin enforcement | Enabled |
+
+To (re-)apply rules after repo recreation:
+```bash
+./scripts/setup-branch-protection.sh Mason0920/hslee
+```
+
 ## CI Workflow
 
 File: `.github/workflows/ci.yml`  
@@ -26,6 +44,7 @@ Runs on: PRs and pushes to `main`
 | Lint  | `golangci-lint` v1.64.8 | Blocks merge |
 | Test  | `go test -race -count=1` | Blocks merge |
 | Build | `go build ./...` | Blocks merge |
+| Smoke Test | binary health-check | Blocks merge |
 
 ## CD Workflow
 
