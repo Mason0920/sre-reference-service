@@ -183,3 +183,202 @@ jobs:
           echo "| Failed SHA | \`${{ needs.guard.outputs.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Rolled back to | \`${{ needs.deploy-staging.outputs.previous_image }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Namespace | \`${{ vars.K8S_NAMESPACE_STAGING }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Deploy to production ───────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    runs-on: ubuntu-latest
+    needs: [guard, smoke-test]
+    # staging smoke-test must pass before production gate opens
+    if: needs.smoke-test.result == 'success'
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    outputs:
+      previous_image: ${{ steps.record.outputs.previous_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ vars.AWS_REGION }}
+
+      - name: Update kubeconfig for production cluster
+        run: |
+          aws eks update-kubeconfig \
+            --name "${{ vars.EKS_CLUSTER_NAME_PRODUCTION }}" \
+            --region "${{ vars.AWS_REGION }}"
+
+      - name: Record previous image (for rollback)
+        id: record
+        run: |
+          PREV=$(kubectl get deployment hslee \
+            --namespace "${{ vars.K8S_NAMESPACE_PRODUCTION }}" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+          echo "previous_image=${PREV}" >> "$GITHUB_OUTPUT"
+          echo "Previous image: ${PREV}"
+
+      - name: Deploy new image
+        run: |
+          kubectl set image deployment/hslee \
+            hslee="${{ needs.guard.outputs.image }}" \
+            --namespace "${{ vars.K8S_NAMESPACE_PRODUCTION }}"
+
+          kubectl rollout status deployment/hslee \
+            --namespace "${{ vars.K8S_NAMESPACE_PRODUCTION }}" \
+            --timeout=300s
+
+      - name: Create deployment summary
+        run: |
+          echo "## Production Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | \`${{ needs.guard.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SHA | \`${{ needs.guard.outputs.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Namespace | \`${{ vars.K8S_NAMESPACE_PRODUCTION }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack on success
+        if: vars.SLACK_WEBHOOK_ENABLED == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          SHORT_SHA="${{ needs.guard.outputs.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          REPO="${GITHUB_REPOSITORY}"
+          RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsSL -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data "{
+              \"text\": \":white_check_mark: *Production deployed* — commit \`${SHORT_SHA}\`\",
+              \"attachments\": [{
+                \"color\": \"good\",
+                \"fields\": [
+                  {\"title\": \"Repository\", \"value\": \"${REPO}\",      \"short\": true},
+                  {\"title\": \"Commit\",     \"value\": \"${SHORT_SHA}\", \"short\": true},
+                  {\"title\": \"Run URL\",    \"value\": \"${RUN_URL}\",   \"short\": false}
+                ]
+              }]
+            }"
+
+  # ── Smoke test production ─────────────────────────────────────────────────────
+  smoke-test-production:
+    name: Smoke Test — Production
+    runs-on: ubuntu-latest
+    needs: [guard, deploy-production]
+    steps:
+      - name: Health check
+        run: |
+          URL="${{ vars.PRODUCTION_URL }}"
+          echo "Checking ${URL}/health …"
+          for i in $(seq 1 5); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${URL}/health" || echo "000")
+            echo "Attempt ${i}: HTTP ${HTTP_STATUS}"
+            if [ "${HTTP_STATUS}" = "200" ]; then
+              echo "Production smoke test passed."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production smoke test failed after 5 attempts."
+          exit 1
+
+      - name: Notify Slack on failure
+        if: failure() && vars.SLACK_WEBHOOK_ENABLED == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          SHORT_SHA="${{ needs.guard.outputs.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          REPO="${GITHUB_REPOSITORY}"
+          RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsSL -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data "{
+              \"text\": \":rotating_light: *Production smoke test FAILED* — commit \`${SHORT_SHA}\` did not pass health check\",
+              \"attachments\": [{
+                \"color\": \"danger\",
+                \"fields\": [
+                  {\"title\": \"Repository\", \"value\": \"${REPO}\",      \"short\": true},
+                  {\"title\": \"Commit\",     \"value\": \"${SHORT_SHA}\", \"short\": true},
+                  {\"title\": \"Run URL\",    \"value\": \"${RUN_URL}\",   \"short\": false}
+                ]
+              }]
+            }"
+
+  # ── Rollback production on smoke-test failure ─────────────────────────────────
+  rollback-production:
+    name: Rollback — Production
+    runs-on: ubuntu-latest
+    needs: [guard, deploy-production, smoke-test-production]
+    # Run only when production smoke-test fails AND a previous image is recorded
+    if: |
+      failure() &&
+      needs.smoke-test-production.result == 'failure' &&
+      needs.deploy-production.outputs.previous_image != ''
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ vars.AWS_REGION }}
+
+      - name: Update kubeconfig for production cluster
+        run: |
+          aws eks update-kubeconfig \
+            --name "${{ vars.EKS_CLUSTER_NAME_PRODUCTION }}" \
+            --region "${{ vars.AWS_REGION }}"
+
+      - name: Rollback to previous image
+        run: |
+          PREV="${{ needs.deploy-production.outputs.previous_image }}"
+          echo "Rolling back production to ${PREV} …"
+          kubectl set image deployment/hslee \
+            hslee="${PREV}" \
+            --namespace "${{ vars.K8S_NAMESPACE_PRODUCTION }}"
+
+          kubectl rollout status deployment/hslee \
+            --namespace "${{ vars.K8S_NAMESPACE_PRODUCTION }}" \
+            --timeout=300s
+
+          echo "Production rollback complete. Investigate the failed SHA: ${{ needs.guard.outputs.sha }}"
+
+      - name: Create rollback summary
+        if: always()
+        run: |
+          echo "## Production Rollback Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Failed SHA | \`${{ needs.guard.outputs.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Rolled back to | \`${{ needs.deploy-production.outputs.previous_image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Namespace | \`${{ vars.K8S_NAMESPACE_PRODUCTION }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack on rollback
+        if: always() && vars.SLACK_WEBHOOK_ENABLED == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          SHORT_SHA="${{ needs.guard.outputs.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          REPO="${GITHUB_REPOSITORY}"
+          RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+          PREV_IMAGE="${{ needs.deploy-production.outputs.previous_image }}"
+          curl -fsSL -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data "{
+              \"text\": \":sos: *Production rollback triggered* — failed commit \`${SHORT_SHA}\` has been rolled back\",
+              \"attachments\": [{
+                \"color\": \"danger\",
+                \"fields\": [
+                  {\"title\": \"Repository\",     \"value\": \"${REPO}\",        \"short\": true},
+                  {\"title\": \"Failed Commit\",  \"value\": \"${SHORT_SHA}\",   \"short\": true},
+                  {\"title\": \"Rolled Back To\", \"value\": \"${PREV_IMAGE}\",  \"short\": false},
+                  {\"title\": \"Run URL\",        \"value\": \"${RUN_URL}\",     \"short\": false}
+                ]
+              }]
+            }"
