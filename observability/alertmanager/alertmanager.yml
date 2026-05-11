@@ -1,6 +1,5 @@
 global:
   resolve_timeout: 5m
-  slack_api_url: '${SLACK_WEBHOOK_URL}'
 
 templates:
   - '/etc/alertmanager/templates/*.tmpl'
@@ -10,41 +9,65 @@ route:
   group_wait: 30s
   group_interval: 15m
   repeat_interval: 4h
-  receiver: slack-alerts
+  receiver: slack-warning
 
   routes:
     - match:
         severity: critical
-      receiver: slack-alerts
-      group_interval: 15m
+      receiver: slack-critical
+      group_wait: 10s
+      group_interval: 5m
       repeat_interval: 1h
+      continue: false
 
     - match:
         severity: warning
-      receiver: slack-alerts
+      receiver: slack-warning
       group_interval: 15m
       repeat_interval: 4h
+      continue: false
 
 receivers:
-  - name: slack-alerts
+  - name: slack-critical
     slack_configs:
-      - channel: '#alerts'
+      - api_url: '${SLACK_WEBHOOK_URL_CRITICAL}'
+        channel: '#alerts-critical'
         send_resolved: true
         username: 'Alertmanager'
         icon_emoji: ':rotating_light:'
-        title: |-
-          [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }}
-        text: |-
-          {{ range .Alerts }}
-          *Alert:* {{ .Annotations.summary }}
-          *Description:* {{ .Annotations.description }}
-          *Severity:* `{{ .Labels.severity }}`
-          *Environment:* `{{ .Labels.environment }}`
-          {{ end }}
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        title: '{{ template "slack.hslee.title" . }}'
+        text: '{{ template "slack.hslee.text" . }}'
+
+  - name: slack-warning
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL_WARNING}'
+        channel: '#alerts-warning'
+        send_resolved: true
+        username: 'Alertmanager'
+        icon_emoji: ':warning:'
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+        title: '{{ template "slack.hslee.title" . }}'
+        text: '{{ template "slack.hslee.text" . }}'
 
 inhibit_rules:
+  # critical alert silences same-instance warning
   - source_match:
       severity: critical
     target_match:
       severity: warning
+    equal: ['alertname', 'instance']
+
+  # critical disk silences warning disk (same mountpoint)
+  - source_match:
+      alertname: 'HighDiskUsageCritical'
+    target_match:
+      alertname: 'HighDiskUsage'
+    equal: ['instance', 'mountpoint']
+
+  # critical memory silences warning memory
+  - source_match:
+      alertname: 'HighMemoryUsageCritical'
+    target_match:
+      alertname: 'HighMemoryUsage'
     equal: ['instance']

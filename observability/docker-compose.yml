@@ -113,7 +113,8 @@ services:
     networks:
       - monitoring
     environment:
-      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-https://hooks.slack.com/services/REPLACE/ME}
+      - SLACK_WEBHOOK_URL_CRITICAL=${SLACK_WEBHOOK_URL_CRITICAL:-https://hooks.slack.com/services/REPLACE/CRITICAL}
+      - SLACK_WEBHOOK_URL_WARNING=${SLACK_WEBHOOK_URL_WARNING:-https://hooks.slack.com/services/REPLACE/WARNING}
 
   promtail:
     image: grafana/promtail:3.0.0
