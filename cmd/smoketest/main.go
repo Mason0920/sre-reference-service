@@ -17,6 +17,9 @@ import (
 	"time"
 )
 
+// osExit is a variable to allow testing of os.Exit calls.
+var osExit = os.Exit
+
 func main() {
 	var (
 		baseURL         string
@@ -31,7 +34,8 @@ func main() {
 
 	if baseURL == "" {
 		fmt.Fprintln(os.Stderr, "error: --url flag or SMOKE_TEST_URL env var is required")
-		os.Exit(2)
+		osExit(2)
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -64,7 +68,8 @@ func main() {
 	if failed {
 		fmt.Fprintln(os.Stderr, "Smoke tests FAILED")
 		cancel()
-		os.Exit(1)
+		osExit(1)
+		return
 	}
 	fmt.Println("Smoke tests PASSED")
 }
