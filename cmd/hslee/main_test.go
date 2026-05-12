@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -87,7 +88,11 @@ func TestNewServeMux(t *testing.T) {
 	defer srv.Close()
 
 	for _, path := range []string{"/health", "/version"} {
-		resp, err := http.Get(srv.URL + path)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+path, nil)
+		if err != nil {
+			t.Fatalf("%s: create request: %v", path, err)
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("%s: %v", path, err)
 		}

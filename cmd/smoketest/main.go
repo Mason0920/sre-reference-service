@@ -35,7 +35,6 @@ func main() {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
 
 	runner := &smokeRunner{
 		client:  &http.Client{},
@@ -60,6 +59,7 @@ func main() {
 		fmt.Println("PASS  /version — version verified")
 	}
 
+	cancel()
 	fmt.Println()
 	if failed {
 		fmt.Fprintln(os.Stderr, "Smoke tests FAILED")
