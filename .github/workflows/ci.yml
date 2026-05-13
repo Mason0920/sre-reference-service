@@ -135,6 +135,9 @@ jobs:
           fi
           echo "✅ Coverage ${COVERAGE}% meets 60% threshold"
 
+      - name: Validate config (make config-check)
+        run: APP_ENV=development make config-check
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -221,6 +224,7 @@ jobs:
     needs: [build]
     env:
       LISTEN_ADDR: ":8080"
+      APP_ENV: "development"
       SMOKE_TEST_URL: "http://localhost:8080"
     steps:
       - name: Download server binary

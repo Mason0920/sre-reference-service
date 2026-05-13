@@ -71,6 +71,12 @@ build-smoketest: ## Build the smoke test runner binary
 clean: ## Remove build artifacts and coverage reports
 	@rm -rf $(BUILD_DIR) coverage.out coverage.html
 
+##@ Configuration
+
+.PHONY: config-check
+config-check: ## Validate required environment variables (set APP_ENV before running)
+	@bash scripts/config-check.sh
+
 ##@ Smoke Test
 
 SMOKE_URL ?= http://localhost:8080
