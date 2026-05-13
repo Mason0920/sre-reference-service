@@ -188,7 +188,7 @@ jobs:
   deploy-production:
     name: Deploy → Production
     runs-on: ubuntu-latest
-    needs: [guard, smoke-test]
+    needs: [guard, build-push, smoke-test]
     # staging smoke-test must pass before production gate opens
     if: needs.smoke-test.result == 'success'
     environment:
