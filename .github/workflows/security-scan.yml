@@ -7,7 +7,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   # ── Scan latest published GHCR image ─────────────────────────────────────────
@@ -18,17 +17,21 @@ jobs:
       contents: read
       packages: read
     steps:
+      - name: Compute image reference
+        id: vars
+        run: echo "image_ref=ghcr.io/${GITHUB_REPOSITORY,,}:latest" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Trivy scan on latest published image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
-          image-ref: ghcr.io/${{ github.repository }}:latest
+          image-ref: ${{ steps.vars.outputs.image_ref }}
           format: json
           output: trivy-weekly-results.json
           severity: CRITICAL,HIGH,MEDIUM
