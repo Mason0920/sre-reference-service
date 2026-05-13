@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hslee-staging
+  namespace: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: deployments
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: deployments
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: deployments
+spec:
+  project: default
+
+  source:
+    # Replace with your actual GitHub repository URL
+    repoURL: https://github.com/hslee/hslee.git
+    targetRevision: main
+    path: k8s/overlays/staging
+
+  destination:
+    # ArgoCD is installed in the staging cluster — use in-cluster reference
+    server: https://kubernetes.default.svc
+    namespace: hslee-staging
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

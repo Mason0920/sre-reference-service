@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hslee-config
+  namespace: default
+  labels:
+    app: hslee
+    environment: development
+data:
+  APP_ENV: "development"
+  LOG_LEVEL: "debug"
+  LISTEN_ADDR: ":8080"
+  OTEL_SERVICE_NAME: "hslee"
+  OTEL_TRACES_SAMPLER_ARG: ""
+  # OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing disabled in development

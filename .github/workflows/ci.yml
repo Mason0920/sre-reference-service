@@ -10,6 +10,9 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
@@ -22,6 +25,39 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.2
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
+
+      - name: Run gosec SAST scan
+        id: gosec
+        run: gosec -fmt sarif -out gosec-results.sarif ./...
+        continue-on-error: true
+
+      - name: Enforce HIGH/CRITICAL severity threshold
+        run: |
+          if [ ! -f gosec-results.sarif ]; then
+            echo "::warning::gosec SARIF output not found"
+            exit 0
+          fi
+          HIGH=$(jq '[.runs[].results[] | select(.level == "error")] | length' gosec-results.sarif)
+          MEDIUM=$(jq '[.runs[].results[] | select(.level == "warning")] | length' gosec-results.sarif)
+          if [ "$MEDIUM" -gt 0 ]; then
+            echo "::warning::gosec found $MEDIUM MEDIUM severity issue(s) — review recommended, not blocking"
+          fi
+          if [ "$HIGH" -gt 0 ]; then
+            echo "::error::gosec found $HIGH HIGH/CRITICAL severity issue(s) — blocking merge"
+            exit 1
+          fi
+          echo "gosec: no HIGH/CRITICAL issues found"
+
+      - name: Upload gosec SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
+          category: gosec
+        continue-on-error: true
 
   test:
     name: Test
@@ -99,6 +135,9 @@ jobs:
           fi
           echo "✅ Coverage ${COVERAGE}% meets 60% threshold"
 
+      - name: Validate config (make config-check)
+        run: APP_ENV=development make config-check
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -110,6 +149,9 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
@@ -121,8 +163,24 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
-      - name: Run govulncheck
-        run: govulncheck ./...
+      - name: Run govulncheck (dependency vulnerability scan)
+        id: govulncheck
+        run: govulncheck -format sarif -output govulncheck-results.sarif ./...
+        continue-on-error: true
+
+      - name: Upload govulncheck SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: govulncheck-results.sarif
+          category: govulncheck
+        continue-on-error: true
+
+      - name: Fail on CRITICAL vulnerabilities
+        if: steps.govulncheck.outcome == 'failure'
+        run: |
+          echo "::error::govulncheck found vulnerabilities in called code — blocking merge"
+          exit 1
 
   build:
     name: Build
@@ -166,6 +224,7 @@ jobs:
     needs: [build]
     env:
       LISTEN_ADDR: ":8080"
+      APP_ENV: "development"
       SMOKE_TEST_URL: "http://localhost:8080"
     steps:
       - name: Download server binary

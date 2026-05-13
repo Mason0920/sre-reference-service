@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hslee/hslee/pkg/config"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -36,7 +37,15 @@ type ctxLoggerKey struct{}
 func initTracer(ctx context.Context, serviceName string) (func(context.Context) error, error) {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
-		endpoint = "localhost:4317"
+		// No endpoint configured — install no-op provider to avoid a 3-second
+		// connection attempt on startup and to run without tracing overhead.
+		noopTP := sdktrace.NewTracerProvider()
+		otel.SetTracerProvider(noopTP)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		))
+		return noopTP.Shutdown, nil
 	}
 
 	// Use a bounded timeout so startup doesn't hang when the OTLP endpoint is unreachable.
@@ -139,13 +148,19 @@ func logFromCtx(ctx context.Context) *slog.Logger {
 }
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
+		os.Exit(1)
+	}
+
 	var level slog.Level
-	switch os.Getenv("LOG_LEVEL") {
-	case "debug":
+	switch cfg.LogLevel {
+	case config.LogDebug:
 		level = slog.LevelDebug
-	case "warn":
+	case config.LogWarn:
 		level = slog.LevelWarn
-	case "error":
+	case config.LogError:
 		level = slog.LevelError
 	default:
 		level = slog.LevelInfo
@@ -153,8 +168,9 @@ func main() {
 
 	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	logger = slog.New(handler).With(
-		"service", "hslee",
-		"service_name", "hslee",
+		"service", cfg.OTELService,
+		"service_name", cfg.OTELService,
+		"env", string(cfg.AppEnv),
 		"version", version,
 		"commit", commit,
 	)
@@ -164,17 +180,12 @@ func main() {
 	defer stop()
 
 	var shutdown func(context.Context) error
-	if tracerShutdown, err := initTracer(ctx, "hslee"); err != nil {
+	if tracerShutdown, err := initTracer(ctx, cfg.OTELService); err != nil {
 		logger.Warn("tracing disabled - running without distributed tracing", "error", err)
 	} else {
 		shutdown = tracerShutdown
 		logger.Info("OpenTelemetry tracer initialized",
 			"endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
-	}
-
-	addr := os.Getenv("LISTEN_ADDR")
-	if addr == "" {
-		addr = ":8080"
 	}
 
 	mux := http.NewServeMux()
@@ -192,10 +203,10 @@ func main() {
 		}),
 	)
 
-	logger.Info("server starting", "addr", addr, "built", buildTime)
+	logger.Info("server starting", "addr", cfg.ListenAddr, "built", buildTime)
 
 	srv := &http.Server{
-		Addr:    addr,
+		Addr:    cfg.ListenAddr,
 		Handler: rootHandler,
 	}
 
