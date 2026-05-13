@@ -5,6 +5,8 @@ namespace: hslee-production
 
 resources:
   - ../../base
+  - namespace.yaml
+  - configmap.yaml
 
 images:
   - name: ghcr.io/hslee/hslee

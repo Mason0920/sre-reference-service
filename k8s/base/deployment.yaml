@@ -9,6 +9,11 @@ spec:
   selector:
     matchLabels:
       app: hslee
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     metadata:
       labels:
@@ -17,6 +22,7 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
+      terminationGracePeriodSeconds: 30
       containers:
         - name: hslee
           image: ghcr.io/hslee/hslee:latest
@@ -24,6 +30,17 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+          env:
+            - name: APP_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: hslee-config
+                  key: APP_ENV
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: hslee-config
+                  key: LOG_LEVEL
           livenessProbe:
             httpGet:
               path: /health
