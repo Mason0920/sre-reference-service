@@ -1,0 +1,35 @@
+variable "project" {
+  description = "Project name"
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment name (staging, production)"
+  type        = string
+}
+
+variable "github_org" {
+  description = "GitHub organization or user name"
+  type        = string
+}
+
+variable "github_repo" {
+  description = "GitHub repository name"
+  type        = string
+}
+
+variable "github_oidc_provider_arn" {
+  description = "ARN of the GitHub Actions OIDC provider (created in bootstrap)"
+  type        = string
+}
+
+variable "ecr_repository_arns" {
+  description = "ARNs of ECR repositories CI/CD can push to"
+  type        = list(string)
+}
+
+variable "tags" {
+  description = "Additional tags"
+  type        = map(string)
+  default     = {}
+}
