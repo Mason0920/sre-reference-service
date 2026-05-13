@@ -1,0 +1,21 @@
+# config/staging.yaml — Staging environment configuration
+#
+# These values map 1-to-1 to the environment variables read by pkg/config.
+# Applied via config/k8s/configmap-staging.yaml in the staging cluster.
+# Secrets (credentials, tokens) are injected via Kubernetes Secrets — never in ConfigMaps.
+#
+# Key              | Type   | Required | Default   | Description
+# ─────────────────┼────────┼──────────┼───────────┼──────────────────────────────────────────────
+# APP_ENV          | string | yes      | —         | Deployment environment (development|staging|production)
+# LOG_LEVEL        | string | no       | info      | Log verbosity (debug|info|warn|error)
+# LISTEN_ADDR      | string | no       | :8080     | HTTP server listen address
+# OTEL_EXPORTER_OTLP_ENDPOINT | string | no | ""   | OpenTelemetry OTLP endpoint (empty = localhost:4317 fallback)
+# OTEL_SERVICE_NAME| string | no       | hslee     | Service name used in traces and logs
+# OTEL_TRACES_SAMPLER_ARG | float | no | —         | Trace sampling ratio (0.0–1.0); absent = always sample
+
+APP_ENV: staging
+LOG_LEVEL: info
+LISTEN_ADDR: ":8080"
+OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4317"
+OTEL_SERVICE_NAME: hslee
+OTEL_TRACES_SAMPLER_ARG: "1.0"
