@@ -25,6 +25,7 @@ terraform/
 cd terraform/bootstrap
 terraform init
 terraform apply -var="aws_account_id=$(aws sts get-caller-identity --query Account --output text)"
+cd -   # return to repo root
 ```
 
 ### 2. Update backend bucket name

@@ -33,7 +33,6 @@ variable "public_access_enabled" {
 variable "public_access_cidrs" {
   description = "CIDRs allowed to reach the public EKS API endpoint. Must be set explicitly in each environment - no open default."
   type        = list(string)
-  default     = []
 
   validation {
     condition     = length(var.public_access_cidrs) > 0
