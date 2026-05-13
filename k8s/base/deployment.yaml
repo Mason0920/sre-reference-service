@@ -30,17 +30,9 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
-          env:
-            - name: APP_ENV
-              valueFrom:
-                configMapKeyRef:
-                  name: hslee-config
-                  key: APP_ENV
-            - name: LOG_LEVEL
-              valueFrom:
-                configMapKeyRef:
-                  name: hslee-config
-                  key: LOG_LEVEL
+          envFrom:
+            - configMapRef:
+                name: hslee-config
           livenessProbe:
             httpGet:
               path: /health

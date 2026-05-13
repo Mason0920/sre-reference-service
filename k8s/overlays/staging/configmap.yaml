@@ -5,3 +5,7 @@ metadata:
 data:
   APP_ENV: staging
   LOG_LEVEL: info
+  LISTEN_ADDR: ":8080"
+  OTEL_SERVICE_NAME: hslee
+  OTEL_EXPORTER_OTLP_ENDPOINT: "otel-collector.monitoring.svc.cluster.local:4317"
+  OTEL_TRACES_SAMPLER_ARG: "1.0"
