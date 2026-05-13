@@ -37,7 +37,15 @@ type ctxLoggerKey struct{}
 func initTracer(ctx context.Context, serviceName string) (func(context.Context) error, error) {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
-		endpoint = "localhost:4317"
+		// No endpoint configured — install no-op provider to avoid a 3-second
+		// connection attempt on startup and to run without tracing overhead.
+		noopTP := sdktrace.NewTracerProvider()
+		otel.SetTracerProvider(noopTP)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		))
+		return noopTP.Shutdown, nil
 	}
 
 	// Use a bounded timeout so startup doesn't hang when the OTLP endpoint is unreachable.
