@@ -21,12 +21,15 @@ jobs:
     outputs:
       sha: ${{ steps.vars.outputs.sha }}
       image: ${{ steps.vars.outputs.image }}
+      repo: ${{ steps.vars.outputs.repo }}
     steps:
       - id: vars
         run: |
           SHA="${{ github.event.workflow_run.head_sha }}"
+          REPO="${GITHUB_REPOSITORY,,}"
           echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/${{ github.repository }}:${SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${REPO}:${SHA}" >> "$GITHUB_OUTPUT"
+          echo "repo=ghcr.io/${REPO}" >> "$GITHUB_OUTPUT"
 
   # ── Build & push Docker image to GHCR ────────────────────────────────────────
   build-push:
@@ -55,13 +58,13 @@ jobs:
 
       - name: Build and push
         id: push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           tags: |
             ${{ needs.guard.outputs.image }}
-            ghcr.io/${{ github.repository }}:latest
+            ${{ needs.guard.outputs.repo }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
@@ -82,7 +85,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -170,7 +173,7 @@ jobs:
       needs.deploy-staging.outputs.previous_image != ''
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
