@@ -9,7 +9,7 @@ locals {
 # github_oidc_provider_arn must be created once in bootstrap/ (account-wide).
 
 resource "aws_iam_role" "cicd" {
-  name = "${var.project}-cicd-role"
+  name = "${var.project}-${var.environment}-cicd-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -35,7 +35,7 @@ resource "aws_iam_role" "cicd" {
 
 # ECR push/pull
 resource "aws_iam_role_policy" "cicd_ecr" {
-  name = "${var.project}-cicd-ecr"
+  name = "${var.project}-${var.environment}-cicd-ecr"
   role = aws_iam_role.cicd.id
 
   policy = jsonencode({
@@ -70,7 +70,7 @@ resource "aws_iam_role_policy" "cicd_ecr" {
 
 # EKS deploy (kubectl apply)
 resource "aws_iam_role_policy" "cicd_eks" {
-  name = "${var.project}-cicd-eks"
+  name = "${var.project}-${var.environment}-cicd-eks"
   role = aws_iam_role.cicd.id
 
   policy = jsonencode({

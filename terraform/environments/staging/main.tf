@@ -44,7 +44,7 @@ module "ecr" {
   source = "../../modules/ecr"
 
   project          = var.project
-  repository_names = [var.project]
+  repository_names = ["${var.project}-staging"]
 }
 
 module "eks" {
@@ -68,6 +68,7 @@ module "iam" {
   source = "../../modules/iam"
 
   project                  = var.project
+  environment              = "staging"
   github_org               = var.github_org
   github_repo              = var.github_repo
   github_oidc_provider_arn = data.aws_iam_openid_connect_provider.github_actions.arn

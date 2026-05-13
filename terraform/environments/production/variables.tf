@@ -19,7 +19,7 @@ variable "vpc_cidr" {
 variable "kubernetes_version" {
   description = "Kubernetes version"
   type        = string
-  default     = "1.29"
+  default     = "1.31"
 }
 
 variable "github_org" {
@@ -31,4 +31,10 @@ variable "github_repo" {
   description = "GitHub repository name"
   type        = string
   default     = "hslee"
+}
+
+variable "eks_public_access_cidrs" {
+  description = "CIDRs allowed to reach the production EKS API endpoint. Must be restricted to office/VPN IPs."
+  type        = list(string)
+  # No default — must be explicitly set in terraform.tfvars or via -var flag.
 }

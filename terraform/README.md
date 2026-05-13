@@ -33,9 +33,14 @@ Replace `ACCOUNT_ID` in both `backend.tf` files with your AWS account ID:
 
 ```bash
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-sed -i "s/ACCOUNT_ID/$AWS_ACCOUNT_ID/g" \
+# macOS: sed -i '' requires an empty-string backup extension
+sed -i '' "s/ACCOUNT_ID/$AWS_ACCOUNT_ID/g" \
   terraform/environments/staging/backend.tf \
   terraform/environments/production/backend.tf
+# Linux:
+# sed -i "s/ACCOUNT_ID/$AWS_ACCOUNT_ID/g" \
+#   terraform/environments/staging/backend.tf \
+#   terraform/environments/production/backend.tf
 ```
 
 ### 3. Deploy an environment

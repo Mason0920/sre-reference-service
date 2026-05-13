@@ -21,13 +21,19 @@ variable "private_subnet_ids" {
 variable "kubernetes_version" {
   description = "Kubernetes version for EKS"
   type        = string
-  default     = "1.29"
+  default     = "1.31"
 }
 
 variable "public_access_enabled" {
   description = "Enable public API server endpoint"
   type        = bool
   default     = true
+}
+
+variable "public_access_cidrs" {
+  description = "CIDRs allowed to reach the public EKS API endpoint. Restrict to known IPs in production."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 }
 
 variable "node_instance_types" {
