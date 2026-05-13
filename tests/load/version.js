@@ -6,13 +6,13 @@
  *   BASE_URL=http://staging k6 run tests/load/version.js
  *
  * Stages: ramp 0→20 VUs (10s), hold (30s), ramp down (10s)
- * Thresholds: p95 < 500ms, error rate < 1%
+ * Thresholds: aligned with SLO targets in config.js
  */
 
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate } from 'k6/metrics';
-import { BASE_URL } from './config.js';
+import { BASE_URL, SLO } from './config.js';
 
 const errorRate = new Rate('error_rate');
 
@@ -23,9 +23,12 @@ export const options = {
     { duration: '10s', target: 0 },
   ],
   thresholds: {
-    http_req_duration: ['p(95)<500'],
-    http_req_failed: ['rate<0.01'],
-    error_rate: ['rate<0.01'],
+    http_req_duration: [
+      `p(95)<${SLO.p95}`,
+      `p(99)<${SLO.p99}`,
+    ],
+    http_req_failed: [`rate<${SLO.errorRate}`],
+    error_rate: [`rate<${SLO.errorRate}`],
   },
 };
 
@@ -51,7 +54,7 @@ export function handleSummary(data) {
   const fmt = (v) => (v == null ? 'N/A' : Number(v).toFixed(2));
   const p95 = d?.values['p(95)'] ?? Infinity;
   const errRate = (m.error_rate?.values.rate ?? 0) * 100;
-  const pass = p95 < 500 && errRate < 1;
+  const pass = p95 < SLO.p95 && errRate < SLO.errorRate * 100;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -64,17 +67,17 @@ td,th{border:1px solid #ccc;padding:.4rem .8rem}</style></head>
 <p>Endpoint: ${BASE_URL}/version</p>
 <table>
 <tr><th>Metric</th><th>Value</th><th>Threshold</th><th>Result</th></tr>
-<tr><td>p95 latency</td><td>${fmt(p95)}ms</td><td>&lt;500ms</td><td class="${p95 < 500 ? 'pass' : 'fail'}">${p95 < 500 ? 'PASS' : 'FAIL'}</td></tr>
-<tr><td>error rate</td><td>${fmt(errRate)}%</td><td>&lt;1%</td><td class="${errRate < 1 ? 'pass' : 'fail'}">${errRate < 1 ? 'PASS' : 'FAIL'}</td></tr>
+<tr><td>p95 latency</td><td>${fmt(p95)}ms</td><td>&lt;${SLO.p95}ms</td><td class="${p95 < SLO.p95 ? 'pass' : 'fail'}">${p95 < SLO.p95 ? 'PASS' : 'FAIL'}</td></tr>
+<tr><td>error rate</td><td>${fmt(errRate)}%</td><td>&lt;${SLO.errorRate * 100}%</td><td class="${errRate < SLO.errorRate * 100 ? 'pass' : 'fail'}">${errRate < SLO.errorRate * 100 ? 'PASS' : 'FAIL'}</td></tr>
 <tr><td>total requests</td><td>${m.http_reqs?.values.count ?? 'N/A'}</td><td>—</td><td>—</td></tr>
-<tr><td>p50 latency</td><td>${fmt(d?.values['p(50)'])}ms</td><td>—</td><td>—</td></tr>
-<tr><td>p99 latency</td><td>${fmt(d?.values['p(99)'])}ms</td><td>—</td><td>—</td></tr>
+<tr><td>p50 latency</td><td>${fmt(d?.values['p(50)'])}ms</td><td>&lt;${SLO.p50}ms</td><td>—</td></tr>
+<tr><td>p99 latency</td><td>${fmt(d?.values['p(99)'])}ms</td><td>&lt;${SLO.p99}ms</td><td>—</td></tr>
 </table>
 </body></html>`;
 
   return {
     'tests/load/results/version-summary.html': html,
     'tests/load/results/version-summary.json': JSON.stringify(data, null, 2),
-    stdout: `\n=== /version Load Test ===\np95: ${fmt(p95)}ms  error_rate: ${fmt(errRate)}%  ${pass ? 'PASS' : 'FAIL'}\n`,
+    stdout: `\n=== /version Load Test ===\np95: ${fmt(p95)}ms (SLO: <${SLO.p95}ms)  error_rate: ${fmt(errRate)}%  ${pass ? 'PASS' : 'FAIL'}\n`,
   };
 }
