@@ -44,14 +44,14 @@ jobs:
           ref: ${{ needs.guard.outputs.sha }}
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v3
 
       - name: Build and push
         id: push
@@ -68,56 +68,75 @@ jobs:
             org.opencontainers.image.revision=${{ needs.guard.outputs.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
-  # ── Deploy to staging ─────────────────────────────────────────────────────────
-  deploy-staging:
-    name: Deploy → Staging
+  # ── Update staging manifest (GitOps) ─────────────────────────────────────────
+  update-manifest-staging:
+    name: Update Staging Manifest
     runs-on: ubuntu-latest
     needs: [guard, build-push]
+    permissions:
+      contents: write
+    outputs:
+      previous_tag: ${{ steps.record.outputs.previous_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Record previous image tag (for rollback)
+        id: record
+        run: |
+          PREV=$(grep 'newTag' k8s/overlays/staging/kustomization.yaml | awk '{print $2}' || echo "latest")
+          echo "previous_tag=${PREV}" >> "$GITHUB_OUTPUT"
+
+      - name: Update staging image tag
+        run: |
+          cd k8s/overlays/staging
+          kustomize edit set image "ghcr.io/${{ env.IMAGE_NAME }}=${{ needs.guard.outputs.image }}"
+
+      - name: Commit and push manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/staging/kustomization.yaml
+          git diff --staged --quiet && echo "No manifest changes" && exit 0
+          git commit -m "chore(gitops): update staging image to ${{ needs.guard.outputs.sha }}"
+          git push
+
+  # ── Wait for ArgoCD to sync staging ──────────────────────────────────────────
+  argocd-sync-staging:
+    name: ArgoCD Sync — Staging
+    runs-on: ubuntu-latest
+    needs: [guard, update-manifest-staging]
     environment:
       name: staging
       url: ${{ vars.STAGING_URL }}
-    outputs:
-      previous_image: ${{ steps.record.outputs.previous_image }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ vars.AWS_REGION }}
-
-      - name: Update kubeconfig for staging cluster
+      - name: Install ArgoCD CLI
         run: |
-          aws eks update-kubeconfig \
-            --name "${{ vars.EKS_CLUSTER_NAME_STAGING }}" \
-            --region "${{ vars.AWS_REGION }}"
+          curl -sSL -o argocd "https://${{ vars.ARGOCD_SERVER }}/download/argocd-linux-amd64"
+          chmod +x argocd && sudo mv argocd /usr/local/bin/argocd
 
-      - name: Record previous image (for rollback)
-        id: record
+      - name: Wait for staging sync and healthy
+        env:
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         run: |
-          PREV=$(kubectl get deployment hslee \
-            --namespace "${{ vars.K8S_NAMESPACE_STAGING }}" \
-            -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
-          echo "previous_image=${PREV}" >> "$GITHUB_OUTPUT"
-          echo "Previous image: ${PREV}"
-
-      - name: Deploy new image
-        run: |
-          kubectl set image deployment/hslee \
-            hslee="${{ needs.guard.outputs.image }}" \
-            --namespace "${{ vars.K8S_NAMESPACE_STAGING }}"
-
-          kubectl rollout status deployment/hslee \
-            --namespace "${{ vars.K8S_NAMESPACE_STAGING }}" \
-            --timeout=120s
+          argocd app wait hslee-staging \
+            --sync \
+            --health \
+            --timeout 180 \
+            --server "${{ vars.ARGOCD_SERVER }}" \
+            --auth-token "$ARGOCD_AUTH_TOKEN" \
+            --grpc-web
 
   # ── Smoke test staging ────────────────────────────────────────────────────────
   smoke-test:
     name: Smoke Test — Staging
     runs-on: ubuntu-latest
-    needs: [guard, deploy-staging]
+    needs: [guard, argocd-sync-staging]
     steps:
       - name: Health check
         run: |
@@ -135,6 +154,150 @@ jobs:
           echo "Smoke test failed after 5 attempts."
           exit 1
 
+  # ── Rollback staging manifest on smoke-test failure ───────────────────────────
+  rollback:
+    name: Rollback — Staging
+    runs-on: ubuntu-latest
+    needs: [guard, update-manifest-staging, argocd-sync-staging, smoke-test]
+    permissions:
+      contents: write
+    if: |
+      failure() &&
+      needs.smoke-test.result == 'failure' &&
+      needs.update-manifest-staging.outputs.previous_tag != ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Revert staging image tag
+        run: |
+          PREV_TAG="${{ needs.update-manifest-staging.outputs.previous_tag }}"
+          cd k8s/overlays/staging
+          kustomize edit set image "ghcr.io/${{ env.IMAGE_NAME }}:${PREV_TAG}"
+
+      - name: Commit rollback
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/staging/kustomization.yaml
+          git diff --staged --quiet && echo "No rollback needed" && exit 0
+          git commit -m "chore(gitops): rollback staging to ${{ needs.update-manifest-staging.outputs.previous_tag }} (failed SHA: ${{ needs.guard.outputs.sha }})"
+          git push
+
+      - name: Create rollback summary
+        if: always()
+        run: |
+          echo "## Staging Rollback Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Failed SHA | \`${{ needs.guard.outputs.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Rolled back to | \`${{ needs.update-manifest-staging.outputs.previous_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Update production manifest (GitOps) ──────────────────────────────────────
+  update-manifest-production:
+    name: Update Production Manifest
+    runs-on: ubuntu-latest
+    needs: [guard, build-push, smoke-test]
+    # staging smoke-test must pass before production gate opens
+    if: needs.smoke-test.result == 'success'
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    permissions:
+      contents: write
+    outputs:
+      previous_tag: ${{ steps.record.outputs.previous_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Record previous image tag (for rollback)
+        id: record
+        run: |
+          PREV=$(grep 'newTag' k8s/overlays/production/kustomization.yaml | awk '{print $2}' || echo "latest")
+          echo "previous_tag=${PREV}" >> "$GITHUB_OUTPUT"
+
+      - name: Update production image tag
+        run: |
+          cd k8s/overlays/production
+          kustomize edit set image "ghcr.io/${{ env.IMAGE_NAME }}=${{ needs.guard.outputs.image }}"
+
+      - name: Commit and push manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/production/kustomization.yaml
+          git diff --staged --quiet && echo "No manifest changes" && exit 0
+          git commit -m "chore(gitops): update production image to ${{ needs.guard.outputs.sha }}"
+          git push
+
+      - name: Create deployment summary
+        run: |
+          echo "## Production Manifest Updated" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | \`${{ needs.guard.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SHA | \`${{ needs.guard.outputs.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Next step | Manual sync in ArgoCD UI: hslee-production |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack — production ready for promotion
+        if: vars.SLACK_WEBHOOK_ENABLED == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          SHORT_SHA="${{ needs.guard.outputs.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          REPO="${GITHUB_REPOSITORY}"
+          RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsSL -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data "{
+              \"text\": \":rocket: *Production manifest updated* — commit \`${SHORT_SHA}\` ready for manual ArgoCD sync\",
+              \"attachments\": [{
+                \"color\": \"#5865F2\",
+                \"fields\": [
+                  {\"title\": \"Repository\",   \"value\": \"${REPO}\",      \"short\": true},
+                  {\"title\": \"Commit\",       \"value\": \"${SHORT_SHA}\", \"short\": true},
+                  {\"title\": \"Action\",       \"value\": \"Sync hslee-production in ArgoCD UI\", \"short\": false},
+                  {\"title\": \"Run URL\",      \"value\": \"${RUN_URL}\",   \"short\": false}
+                ]
+              }]
+            }"
+
+  # ── Smoke test production (runs after manual ArgoCD sync) ────────────────────
+  smoke-test-production:
+    name: Smoke Test — Production
+    runs-on: ubuntu-latest
+    needs: [guard, update-manifest-production]
+    steps:
+      - name: Health check
+        run: |
+          URL="${{ vars.PRODUCTION_URL }}"
+          echo "Checking ${URL}/health …"
+          for i in $(seq 1 5); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${URL}/health" || echo "000")
+            echo "Attempt ${i}: HTTP ${HTTP_STATUS}"
+            if [ "${HTTP_STATUS}" = "200" ]; then
+              echo "Production smoke test passed."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production smoke test failed after 5 attempts."
+          exit 1
+
       - name: Notify Slack on failure
         if: failure() && vars.SLACK_WEBHOOK_ENABLED == 'true'
         env:
@@ -147,65 +310,61 @@ jobs:
           curl -fsSL -X POST "$SLACK_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             --data "{
-              \"text\": \":x: *Staging smoke test FAILED* — commit \`${SHORT_SHA}\` did not pass health check\",
+              \"text\": \":rotating_light: *Production smoke test FAILED* — commit \`${SHORT_SHA}\` did not pass health check\",
               \"attachments\": [{
                 \"color\": \"danger\",
                 \"fields\": [
-                  {\"title\": \"Repository\", \"value\": \"${REPO}\",       \"short\": true},
-                  {\"title\": \"Commit\",     \"value\": \"${SHORT_SHA}\",  \"short\": true},
-                  {\"title\": \"Run URL\",    \"value\": \"${RUN_URL}\",    \"short\": false}
+                  {\"title\": \"Repository\", \"value\": \"${REPO}\",      \"short\": true},
+                  {\"title\": \"Commit\",     \"value\": \"${SHORT_SHA}\", \"short\": true},
+                  {\"title\": \"Run URL\",    \"value\": \"${RUN_URL}\",   \"short\": false}
                 ]
               }]
             }"
 
-  # ── Rollback on smoke-test failure ────────────────────────────────────────────
-  rollback:
-    name: Rollback — Staging
+  # ── Rollback production manifest on smoke-test failure ────────────────────────
+  rollback-production:
+    name: Rollback — Production
     runs-on: ubuntu-latest
-    needs: [guard, deploy-staging, smoke-test]
-    # Run only when smoke-test fails AND a previous image is recorded
+    needs: [guard, update-manifest-production, smoke-test-production]
+    permissions:
+      contents: write
     if: |
       failure() &&
-      needs.smoke-test.result == 'failure' &&
-      needs.deploy-staging.outputs.previous_image != ''
+      needs.smoke-test-production.result == 'failure' &&
+      needs.update-manifest-production.outputs.previous_tag != ''
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ vars.AWS_REGION }}
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update kubeconfig for staging cluster
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Revert production image tag
         run: |
-          aws eks update-kubeconfig \
-            --name "${{ vars.EKS_CLUSTER_NAME_STAGING }}" \
-            --region "${{ vars.AWS_REGION }}"
+          PREV_TAG="${{ needs.update-manifest-production.outputs.previous_tag }}"
+          cd k8s/overlays/production
+          kustomize edit set image "ghcr.io/${{ env.IMAGE_NAME }}:${PREV_TAG}"
 
-      - name: Rollback to previous image
+      - name: Commit rollback
         run: |
-          PREV="${{ needs.deploy-staging.outputs.previous_image }}"
-          echo "Rolling back to ${PREV} …"
-          kubectl set image deployment/hslee \
-            hslee="${PREV}" \
-            --namespace "${{ vars.K8S_NAMESPACE_STAGING }}"
-
-          kubectl rollout status deployment/hslee \
-            --namespace "${{ vars.K8S_NAMESPACE_STAGING }}" \
-            --timeout=120s
-
-          echo "Rollback complete. Investigate the failed SHA: ${{ needs.guard.outputs.sha }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/production/kustomization.yaml
+          git diff --staged --quiet && echo "No rollback needed" && exit 0
+          git commit -m "chore(gitops): rollback production to ${{ needs.update-manifest-production.outputs.previous_tag }} (failed SHA: ${{ needs.guard.outputs.sha }})"
+          git push
 
       - name: Create rollback summary
         if: always()
         run: |
-          echo "## Rollback Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Production Rollback Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Failed SHA | \`${{ needs.guard.outputs.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Rolled back to | \`${{ needs.deploy-staging.outputs.previous_image }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Namespace | \`${{ vars.K8S_NAMESPACE_STAGING }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Rolled back to | \`${{ needs.update-manifest-production.outputs.previous_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Notify Slack on rollback
         if: always() && vars.SLACK_WEBHOOK_ENABLED == 'true'
@@ -216,13 +375,252 @@ jobs:
           SHORT_SHA="${SHORT_SHA:0:7}"
           REPO="${GITHUB_REPOSITORY}"
           RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
-          PREV_IMAGE="${{ needs.deploy-staging.outputs.previous_image }}"
+          PREV_TAG="${{ needs.update-manifest-production.outputs.previous_tag }}"
           curl -fsSL -X POST "$SLACK_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             --data "{
-              \"text\": \":warning: *Staging rollback triggered* — failed commit \`${SHORT_SHA}\` has been rolled back\",
+              \"text\": \":sos: *Production rollback triggered* — failed commit \`${SHORT_SHA}\` manifest reverted\",
               \"attachments\": [{
-                \"color\": \"warning\",
+                \"color\": \"danger\",
+                \"fields\": [
+                  {\"title\": \"Repository\",     \"value\": \"${REPO}\",      \"short\": true},
+                  {\"title\": \"Failed Commit\",  \"value\": \"${SHORT_SHA}\", \"short\": true},
+                  {\"title\": \"Rolled Back To\", \"value\": \"${PREV_TAG}\",  \"short\": false},
+                  {\"title\": \"Run URL\",        \"value\": \"${RUN_URL}\",   \"short\": false}
+                ]
+              }]
+            }"
+
+  # ── Deploy to production ───────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    runs-on: ubuntu-latest
+    needs: [guard, build-push, smoke-test]
+    permissions:
+      id-token: write
+      contents: read
+    # staging smoke-test must pass before production gate opens
+    if: needs.smoke-test.result == 'success'
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    outputs:
+      previous_image: ${{ steps.record.outputs.previous_image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_PRODUCTION }}
+          aws-region:     ${{ vars.AWS_REGION }}
+
+      - name: Update kubeconfig for production cluster
+        run: |
+          aws eks update-kubeconfig \
+            --name "${{ vars.EKS_CLUSTER_NAME_PRODUCTION }}" \
+            --region "${{ vars.AWS_REGION }}"
+
+      - name: Record previous image (for rollback)
+        id: record
+        run: |
+          PREV=$(kubectl get deployment hslee \
+            --namespace "${{ vars.K8S_NAMESPACE_PRODUCTION }}" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+          echo "previous_image=${PREV}" >> "$GITHUB_OUTPUT"
+          echo "Previous image: ${PREV}"
+
+      - name: Deploy new image
+        run: |
+          kubectl set image deployment/hslee \
+            hslee="${{ needs.guard.outputs.image }}" \
+            --namespace "${{ vars.K8S_NAMESPACE_PRODUCTION }}"
+
+          kubectl rollout status deployment/hslee \
+            --namespace "${{ vars.K8S_NAMESPACE_PRODUCTION }}" \
+            --timeout=300s
+
+      - name: Create deployment summary
+        run: |
+          echo "## Production Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | \`${{ needs.guard.outputs.image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SHA | \`${{ needs.guard.outputs.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Namespace | \`${{ vars.K8S_NAMESPACE_PRODUCTION }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fetch Slack webhook URL from Secrets Manager
+        if: vars.SLACK_WEBHOOK_ENABLED == 'true'
+        id: slack-secret
+        run: |
+          SLACK_WEBHOOK_URL=$(aws secretsmanager get-secret-value \
+            --secret-id hslee/slack-webhook-url \
+            --query SecretString --output text)
+          echo "::add-mask::${SLACK_WEBHOOK_URL}"
+          echo "url=${SLACK_WEBHOOK_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Slack on success
+        if: vars.SLACK_WEBHOOK_ENABLED == 'true'
+        run: |
+          SHORT_SHA="${{ needs.guard.outputs.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          REPO="${GITHUB_REPOSITORY}"
+          RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsSL -X POST "${{ steps.slack-secret.outputs.url }}" \
+            -H "Content-Type: application/json" \
+            --data "{
+              \"text\": \":white_check_mark: *Production deployed* — commit \`${SHORT_SHA}\`\",
+              \"attachments\": [{
+                \"color\": \"good\",
+                \"fields\": [
+                  {\"title\": \"Repository\", \"value\": \"${REPO}\",      \"short\": true},
+                  {\"title\": \"Commit\",     \"value\": \"${SHORT_SHA}\", \"short\": true},
+                  {\"title\": \"Run URL\",    \"value\": \"${RUN_URL}\",   \"short\": false}
+                ]
+              }]
+            }"
+
+  # ── Smoke test production ─────────────────────────────────────────────────────
+  smoke-test-production:
+    name: Smoke Test — Production
+    runs-on: ubuntu-latest
+    needs: [guard, deploy-production]
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Health check
+        run: |
+          URL="${{ vars.PRODUCTION_URL }}"
+          echo "Checking ${URL}/health …"
+          for i in $(seq 1 5); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${URL}/health" || echo "000")
+            echo "Attempt ${i}: HTTP ${HTTP_STATUS}"
+            if [ "${HTTP_STATUS}" = "200" ]; then
+              echo "Production smoke test passed."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production smoke test failed after 5 attempts."
+          exit 1
+
+      - name: Configure AWS credentials (OIDC) for Slack notification
+        if: failure() && vars.SLACK_WEBHOOK_ENABLED == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_PRODUCTION }}
+          aws-region:     ${{ vars.AWS_REGION }}
+
+      - name: Fetch Slack webhook URL from Secrets Manager
+        if: failure() && vars.SLACK_WEBHOOK_ENABLED == 'true'
+        id: slack-secret
+        run: |
+          SLACK_WEBHOOK_URL=$(aws secretsmanager get-secret-value \
+            --secret-id hslee/slack-webhook-url \
+            --query SecretString --output text)
+          echo "::add-mask::${SLACK_WEBHOOK_URL}"
+          echo "url=${SLACK_WEBHOOK_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Slack on failure
+        if: failure() && vars.SLACK_WEBHOOK_ENABLED == 'true'
+        run: |
+          SHORT_SHA="${{ needs.guard.outputs.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          REPO="${GITHUB_REPOSITORY}"
+          RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsSL -X POST "${{ steps.slack-secret.outputs.url }}" \
+            -H "Content-Type: application/json" \
+            --data "{
+              \"text\": \":rotating_light: *Production smoke test FAILED* — commit \`${SHORT_SHA}\` did not pass health check\",
+              \"attachments\": [{
+                \"color\": \"danger\",
+                \"fields\": [
+                  {\"title\": \"Repository\", \"value\": \"${REPO}\",      \"short\": true},
+                  {\"title\": \"Commit\",     \"value\": \"${SHORT_SHA}\", \"short\": true},
+                  {\"title\": \"Run URL\",    \"value\": \"${RUN_URL}\",   \"short\": false}
+                ]
+              }]
+            }"
+
+  # ── Rollback production on smoke-test failure ─────────────────────────────────
+  rollback-production:
+    name: Rollback — Production
+    runs-on: ubuntu-latest
+    needs: [guard, deploy-production, smoke-test-production]
+    permissions:
+      id-token: write
+      contents: read
+    # Run only when production smoke-test fails AND a previous image is recorded
+    if: |
+      failure() &&
+      needs.smoke-test-production.result == 'failure' &&
+      needs.deploy-production.outputs.previous_image != ''
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_PRODUCTION }}
+          aws-region:     ${{ vars.AWS_REGION }}
+
+      - name: Update kubeconfig for production cluster
+        run: |
+          aws eks update-kubeconfig \
+            --name "${{ vars.EKS_CLUSTER_NAME_PRODUCTION }}" \
+            --region "${{ vars.AWS_REGION }}"
+
+      - name: Rollback to previous image
+        run: |
+          PREV="${{ needs.deploy-production.outputs.previous_image }}"
+          echo "Rolling back production to ${PREV} …"
+          kubectl set image deployment/hslee \
+            hslee="${PREV}" \
+            --namespace "${{ vars.K8S_NAMESPACE_PRODUCTION }}"
+
+          kubectl rollout status deployment/hslee \
+            --namespace "${{ vars.K8S_NAMESPACE_PRODUCTION }}" \
+            --timeout=300s
+
+          echo "Production rollback complete. Investigate the failed SHA: ${{ needs.guard.outputs.sha }}"
+
+      - name: Create rollback summary
+        if: always()
+        run: |
+          echo "## Production Rollback Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Failed SHA | \`${{ needs.guard.outputs.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Rolled back to | \`${{ needs.deploy-production.outputs.previous_image }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Namespace | \`${{ vars.K8S_NAMESPACE_PRODUCTION }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fetch Slack webhook URL from Secrets Manager
+        if: always() && vars.SLACK_WEBHOOK_ENABLED == 'true'
+        id: slack-secret
+        run: |
+          SLACK_WEBHOOK_URL=$(aws secretsmanager get-secret-value \
+            --secret-id hslee/slack-webhook-url \
+            --query SecretString --output text)
+          echo "::add-mask::${SLACK_WEBHOOK_URL}"
+          echo "url=${SLACK_WEBHOOK_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Slack on rollback
+        if: always() && vars.SLACK_WEBHOOK_ENABLED == 'true'
+        run: |
+          SHORT_SHA="${{ needs.guard.outputs.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          REPO="${GITHUB_REPOSITORY}"
+          RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+          PREV_IMAGE="${{ needs.deploy-production.outputs.previous_image }}"
+          curl -fsSL -X POST "${{ steps.slack-secret.outputs.url }}" \
+            -H "Content-Type: application/json" \
+            --data "{
+              \"text\": \":sos: *Production rollback triggered* — failed commit \`${SHORT_SHA}\` has been rolled back\",
+              \"attachments\": [{
+                \"color\": \"danger\",
                 \"fields\": [
                   {\"title\": \"Repository\",     \"value\": \"${REPO}\",        \"short\": true},
                   {\"title\": \"Failed Commit\",  \"value\": \"${SHORT_SHA}\",   \"short\": true},
