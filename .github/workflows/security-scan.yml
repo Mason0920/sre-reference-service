@@ -1,0 +1,45 @@
+name: Weekly Security Scan
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'  # Every Monday at 00:00 UTC
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ── Scan latest published GHCR image ─────────────────────────────────────────
+  trivy-latest:
+    name: Scan Latest GHCR Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy scan on latest published image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:latest
+          format: json
+          output: trivy-weekly-results.json
+          severity: CRITICAL,HIGH,MEDIUM
+          exit-code: '0'
+          ignore-unfixed: false
+
+      - name: Upload weekly scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-weekly-${{ github.run_id }}
+          path: trivy-weekly-results.json
+          if-no-files-found: warn
+          retention-days: 90
