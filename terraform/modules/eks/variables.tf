@@ -31,9 +31,14 @@ variable "public_access_enabled" {
 }
 
 variable "public_access_cidrs" {
-  description = "CIDRs allowed to reach the public EKS API endpoint. Restrict to known IPs in production."
+  description = "CIDRs allowed to reach the public EKS API endpoint. Must be set explicitly in each environment - no open default."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
+
+  validation {
+    condition     = length(var.public_access_cidrs) > 0
+    error_message = "public_access_cidrs must be a non-empty list. Set explicit CIDRs per environment (e.g. office/VPN CIDR for production)."
+  }
 }
 
 variable "node_instance_types" {
