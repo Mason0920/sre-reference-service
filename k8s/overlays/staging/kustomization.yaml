@@ -5,6 +5,7 @@ namespace: hslee-staging
 
 resources:
   - ../../base
+  - configmap.yaml
 
 images:
   - name: ghcr.io/hslee/hslee
