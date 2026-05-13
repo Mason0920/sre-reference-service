@@ -168,7 +168,7 @@ func TestTraceLogMiddleware_NoSpan(t *testing.T) {
 
 func TestTraceLogMiddleware_WithSpan(t *testing.T) {
 	tp := sdktrace.NewTracerProvider()
-	defer tp.Shutdown(context.Background())
+	defer func() { _ = tp.Shutdown(context.Background()) }()
 
 	ctx, span := tp.Tracer("test").Start(context.Background(), "test-op")
 	defer span.End()
