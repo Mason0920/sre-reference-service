@@ -322,7 +322,8 @@ jobs:
     # Run only when production smoke-test fails AND a previous image is recorded
     if: |
       failure() &&
-      needs.smoke-test-production.result == 'failure' &&
+      (needs.smoke-test-production.result == 'failure' ||
+       needs.smoke-test-production.result == 'skipped') &&
       needs.deploy-production.outputs.previous_image != ''
     steps:
       - name: Configure AWS credentials
