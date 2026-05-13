@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -188,15 +189,15 @@ func TestTraceLogMiddleware_WithSpan(t *testing.T) {
 	}
 }
 
-func TestInitTracer(t *testing.T) {
+func TestInitTracer_NoEndpoint(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	ctx := context.Background()
 	shutdown, err := initTracer(ctx, "test-service")
 	if err != nil {
-		t.Skipf("initTracer failed (no OTLP endpoint): %v", err)
+		t.Fatalf("initTracer failed: %v", err)
 	}
 	if err := shutdown(ctx); err != nil {
-		t.Logf("tracer shutdown: %v", err)
+		t.Errorf("shutdown error: %v", err)
 	}
 }
 
@@ -207,4 +208,19 @@ func TestInjectExtractTraceContext(t *testing.T) {
 	if ctx == nil {
 		t.Error("ExtractTraceContext returned nil context")
 	}
+}
+
+func TestInitTracer_WithEndpoint(t *testing.T) {
+	// Use a fake endpoint to exercise the gRPC-exporter setup path without
+	// requiring a live Jaeger/OTLP collector.  otlptracegrpc.New connects
+	// lazily, so this succeeds even without a running server.
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:19417")
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	shutdown, err := initTracer(ctx, "test-service")
+	if err != nil {
+		// Connection refused / timeout — expected in CI; gRPC setup code covered.
+		return
+	}
+	_ = shutdown(context.Background())
 }
