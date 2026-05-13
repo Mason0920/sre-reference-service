@@ -188,16 +188,26 @@ func TestTraceLogMiddleware_WithSpan(t *testing.T) {
 	}
 }
 
-func TestInitTracer(t *testing.T) {
-	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+func TestInitTracer_NoEndpoint(t *testing.T) {
 	ctx := context.Background()
-	shutdown, err := initTracer(ctx, "test-service")
+	shutdown, err := initTracer(ctx, "test-service", "")
 	if err != nil {
-		t.Skipf("initTracer failed (no OTLP endpoint): %v", err)
+		t.Fatalf("initTracer failed: %v", err)
 	}
 	if err := shutdown(ctx); err != nil {
-		t.Logf("tracer shutdown: %v", err)
+		t.Errorf("shutdown error: %v", err)
 	}
+}
+
+func TestInitTracer_WithEndpoint(t *testing.T) {
+	// Use a fake endpoint to exercise the gRPC-exporter setup path without
+	// requiring a live Jaeger/OTLP collector.  otlptracegrpc.New connects
+	// lazily, so this succeeds even without a running server.
+	shutdown, err := initTracer(context.Background(), "test-service", "http://localhost:19417")
+	if err != nil {
+		t.Skipf("initTracer with endpoint failed: %v", err)
+	}
+	_ = shutdown(context.Background())
 }
 
 func TestInjectExtractTraceContext(t *testing.T) {

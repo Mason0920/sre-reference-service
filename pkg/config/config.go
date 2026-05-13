@@ -26,9 +26,20 @@ const (
 )
 
 // Config holds all application configuration.
+//
+// Environment variable mapping:
+//
+//	APP_ENV                       → AppEnv       (required)
+//	LOG_LEVEL                     → LogLevel      (default: info)
+//	LISTEN_ADDR                   → ListenAddr    (default: :8080)
+//	OTEL_EXPORTER_OTLP_ENDPOINT   → OTELEndpoint  (default: "")
+//	OTEL_SERVICE_NAME             → OTELService   (default: hslee)
 type Config struct {
-	AppEnv   Env
-	LogLevel LogLevel
+	AppEnv       Env
+	LogLevel     LogLevel
+	ListenAddr   string
+	OTELEndpoint string
+	OTELService  string
 }
 
 var validEnvs = map[Env]bool{
@@ -44,8 +55,9 @@ var validLogLevels = map[LogLevel]bool{
 	LogError: true,
 }
 
-// Load reads configuration from environment variables.
-// APP_ENV is required; LOG_LEVEL defaults to "info".
+// Load reads configuration from environment variables and validates all values.
+// Required variables cause an error if missing or invalid; optional variables
+// fall back to their documented defaults.
 func Load() (*Config, error) {
 	appEnv := Env(os.Getenv("APP_ENV"))
 	if appEnv == "" {
@@ -63,8 +75,21 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("LOG_LEVEL %q is invalid: must be debug, info, warn, or error", logLevel)
 	}
 
+	listenAddr := os.Getenv("LISTEN_ADDR")
+	if listenAddr == "" {
+		listenAddr = ":8080"
+	}
+
+	otelService := os.Getenv("OTEL_SERVICE_NAME")
+	if otelService == "" {
+		otelService = "hslee"
+	}
+
 	return &Config{
-		AppEnv:   appEnv,
-		LogLevel: logLevel,
+		AppEnv:       appEnv,
+		LogLevel:     logLevel,
+		ListenAddr:   listenAddr,
+		OTELEndpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+		OTELService:  otelService,
 	}, nil
 }

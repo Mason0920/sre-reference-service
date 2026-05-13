@@ -71,6 +71,12 @@ build-smoketest: ## Build the smoke test runner binary
 clean: ## Remove build artifacts and coverage reports
 	@rm -rf $(BUILD_DIR) coverage.out coverage.html
 
+##@ Configuration
+
+.PHONY: config-check
+config-check: ## Validate required environment variables (set APP_ENV before running)
+	@bash scripts/config-check.sh
+
 ##@ Smoke Test
 
 SMOKE_URL ?= http://localhost:8080
@@ -85,6 +91,53 @@ smoke-test: build build-smoketest ## Run smoke tests against SMOKE_URL (starts s
 		kill $$(cat .server.pid) 2>/dev/null || true; \
 		rm -f .server.pid; \
 		exit $$STATUS
+
+##@ Kubernetes
+
+.PHONY: k8s-apply-staging
+k8s-apply-staging: ## Apply k8s manifests to staging (bootstrap or resync)
+	kubectl apply -k k8s/overlays/staging
+
+.PHONY: k8s-apply-production
+k8s-apply-production: ## Apply k8s manifests to production (bootstrap or resync)
+	kubectl apply -k k8s/overlays/production
+
+.PHONY: k8s-diff-staging
+k8s-diff-staging: ## Show diff between local manifests and staging cluster state
+	kubectl diff -k k8s/overlays/staging
+
+.PHONY: k8s-diff-production
+k8s-diff-production: ## Show diff between local manifests and production cluster state
+	kubectl diff -k k8s/overlays/production
+
+##@ Terraform
+
+TF_STAGING_DIR    := terraform/environments/staging
+TF_PRODUCTION_DIR := terraform/environments/production
+
+.PHONY: tf-init-staging
+tf-init-staging: ## Initialize Terraform for staging (requires AWS credentials)
+	terraform -chdir=$(TF_STAGING_DIR) init
+
+.PHONY: tf-plan-staging
+tf-plan-staging: ## Plan Terraform changes for staging
+	terraform -chdir=$(TF_STAGING_DIR) plan
+
+.PHONY: tf-apply-staging
+tf-apply-staging: ## Apply Terraform changes for staging (provisions EKS cluster)
+	terraform -chdir=$(TF_STAGING_DIR) apply
+
+.PHONY: tf-init-production
+tf-init-production: ## Initialize Terraform for production (requires AWS credentials)
+	terraform -chdir=$(TF_PRODUCTION_DIR) init
+
+.PHONY: tf-plan-production
+tf-plan-production: ## Plan Terraform changes for production
+	terraform -chdir=$(TF_PRODUCTION_DIR) plan
+
+.PHONY: tf-apply-production
+tf-apply-production: ## Apply Terraform changes for production (provisions EKS cluster)
+	terraform -chdir=$(TF_PRODUCTION_DIR) apply
 
 ##@ Help
 
