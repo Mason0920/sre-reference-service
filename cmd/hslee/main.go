@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,8 +35,7 @@ var logger *slog.Logger
 
 type ctxLoggerKey struct{}
 
-func initTracer(ctx context.Context, serviceName string) (func(context.Context) error, error) {
-	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+func initTracer(ctx context.Context, serviceName, endpoint string) (func(context.Context) error, error) {
 	if endpoint == "" {
 		// No endpoint configured — install no-op provider to avoid a 3-second
 		// connection attempt on startup and to run without tracing overhead.
@@ -48,11 +48,13 @@ func initTracer(ctx context.Context, serviceName string) (func(context.Context) 
 		return noopTP.Shutdown, nil
 	}
 
+	// gRPC WithEndpoint expects host:port without a scheme prefix.
+	grpcEndpoint := strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
 	// Use a bounded timeout so startup doesn't hang when the OTLP endpoint is unreachable.
 	dialCtx, dialCancel := context.WithTimeout(ctx, 3*time.Second)
 	defer dialCancel()
 	exporter, err := otlptracegrpc.New(dialCtx,
-		otlptracegrpc.WithEndpoint(endpoint),
+		otlptracegrpc.WithEndpoint(grpcEndpoint),
 		otlptracegrpc.WithInsecure(),
 	)
 	if err != nil {
@@ -180,12 +182,12 @@ func main() {
 	defer stop()
 
 	var shutdown func(context.Context) error
-	if tracerShutdown, err := initTracer(ctx, cfg.OTELService); err != nil {
+	if tracerShutdown, err := initTracer(ctx, cfg.OTELService, cfg.OTELEndpoint); err != nil {
 		logger.Warn("tracing disabled - running without distributed tracing", "error", err)
 	} else {
 		shutdown = tracerShutdown
 		logger.Info("OpenTelemetry tracer initialized",
-			"endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+			"endpoint", cfg.OTELEndpoint)
 	}
 
 	mux := http.NewServeMux()
