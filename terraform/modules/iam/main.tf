@@ -5,21 +5,8 @@ locals {
   })
 }
 
-data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
-
-# ── GitHub Actions OIDC provider ──────────────────────────────────────────────
-# Allows GitHub Actions to assume AWS roles without long-lived credentials.
-
-resource "aws_iam_openid_connect_provider" "github_actions" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
-
-  tags = local.common_tags
-}
-
 # ── CI/CD deploy role ─────────────────────────────────────────────────────────
+# github_oidc_provider_arn must be created once in bootstrap/ (account-wide).
 
 resource "aws_iam_role" "cicd" {
   name = "${var.project}-cicd-role"
@@ -29,7 +16,7 @@ resource "aws_iam_role" "cicd" {
     Statement = [{
       Effect = "Allow"
       Principal = {
-        Federated = aws_iam_openid_connect_provider.github_actions.arn
+        Federated = var.github_oidc_provider_arn
       }
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {

@@ -25,6 +25,11 @@ provider "aws" {
   }
 }
 
+# GitHub Actions OIDC provider is account-wide; created once in bootstrap/.
+data "aws_iam_openid_connect_provider" "github_actions" {
+  url = "https://token.actions.githubusercontent.com"
+}
+
 module "vpc" {
   source = "../../modules/vpc"
 
@@ -62,8 +67,9 @@ module "eks" {
 module "iam" {
   source = "../../modules/iam"
 
-  project             = var.project
-  github_org          = var.github_org
-  github_repo         = var.github_repo
-  ecr_repository_arns = values(module.ecr.repository_arns)
+  project                  = var.project
+  github_org               = var.github_org
+  github_repo              = var.github_repo
+  github_oidc_provider_arn = data.aws_iam_openid_connect_provider.github_actions.arn
+  ecr_repository_arns      = values(module.ecr.repository_arns)
 }

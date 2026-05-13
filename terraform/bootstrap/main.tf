@@ -58,3 +58,11 @@ resource "aws_dynamodb_table" "terraform_lock" {
     prevent_destroy = true
   }
 }
+
+# ── GitHub Actions OIDC provider (account-wide, one per account) ─────────────
+# Created here so staging + production environments can share it via data source.
+resource "aws_iam_openid_connect_provider" "github_actions" {
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+}

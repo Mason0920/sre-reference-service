@@ -13,6 +13,11 @@ variable "github_repo" {
   type        = string
 }
 
+variable "github_oidc_provider_arn" {
+  description = "ARN of the GitHub Actions OIDC provider (created in bootstrap)"
+  type        = string
+}
+
 variable "ecr_repository_arns" {
   description = "ARNs of ECR repositories CI/CD can push to"
   type        = list(string)
