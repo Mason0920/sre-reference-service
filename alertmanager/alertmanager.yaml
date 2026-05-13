@@ -1,0 +1,67 @@
+global:
+  resolve_timeout: 5m
+  # Set SLACK_WEBHOOK_URL env var or replace with your Incoming Webhook URL
+  slack_api_url: "${SLACK_WEBHOOK_URL}"
+
+templates:
+  - "/etc/alertmanager/templates/*.tmpl"
+
+route:
+  receiver: slack-slo-warnings
+  group_by: [alertname, job, slo]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = critical
+      receiver: slack-slo-critical
+      repeat_interval: 1h
+      continue: false
+
+    - matchers:
+        - severity = warning
+      receiver: slack-slo-warnings
+      repeat_interval: 4h
+      continue: false
+
+receivers:
+  - name: slack-slo-critical
+    slack_configs:
+      - channel: "#slo-alerts"
+        username: "Prometheus Alertmanager"
+        icon_emoji: ":rotating_light:"
+        color: "{{ if eq .Status \"firing\" }}danger{{ else }}good{{ end }}"
+        title: ":rotating_light: [CRITICAL] {{ .GroupLabels.alertname }}"
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Started:* {{ .StartsAt | since }}
+          {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+          {{ end }}
+        send_resolved: true
+
+  - name: slack-slo-warnings
+    slack_configs:
+      - channel: "#slo-alerts"
+        username: "Prometheus Alertmanager"
+        icon_emoji: ":warning:"
+        color: "{{ if eq .Status \"firing\" }}warning{{ else }}good{{ end }}"
+        title: ":warning: [WARNING] {{ .GroupLabels.alertname }}"
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Started:* {{ .StartsAt | since }}
+          {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+          {{ end }}
+        send_resolved: true
+
+inhibit_rules:
+  # Suppress warning when critical is already firing for the same SLO
+  - source_matchers:
+      - severity = critical
+    target_matchers:
+      - severity = warning
+    equal: [job, slo]

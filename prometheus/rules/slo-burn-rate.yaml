@@ -1,0 +1,141 @@
+groups:
+  - name: slo:error_budget:recording_rules
+    interval: 1m
+    rules:
+      # Error rate ratios at multiple time windows
+      - record: slo:sli_error_rate:ratio_rate_5m
+        expr: >
+          sum(rate(http_requests_total{job="hslee",status=~"5.."}[5m]))
+          / sum(rate(http_requests_total{job="hslee"}[5m]))
+        labels:
+          job: hslee
+
+      - record: slo:sli_error_rate:ratio_rate_1h
+        expr: >
+          sum(rate(http_requests_total{job="hslee",status=~"5.."}[1h]))
+          / sum(rate(http_requests_total{job="hslee"}[1h]))
+        labels:
+          job: hslee
+
+      - record: slo:sli_error_rate:ratio_rate_6h
+        expr: >
+          sum(rate(http_requests_total{job="hslee",status=~"5.."}[6h]))
+          / sum(rate(http_requests_total{job="hslee"}[6h]))
+        labels:
+          job: hslee
+
+      - record: slo:sli_error_rate:ratio_rate_3d
+        expr: >
+          sum(rate(http_requests_total{job="hslee",status=~"5.."}[3d]))
+          / sum(rate(http_requests_total{job="hslee"}[3d]))
+        labels:
+          job: hslee
+
+      # Burn rate = error rate / error budget rate
+      # SLO target: 99.9% → error budget = 0.001
+      - record: slo:error_budget_burn_rate:ratio_rate_5m
+        expr: slo:sli_error_rate:ratio_rate_5m{job="hslee"} / 0.001
+
+      - record: slo:error_budget_burn_rate:ratio_rate_1h
+        expr: slo:sli_error_rate:ratio_rate_1h{job="hslee"} / 0.001
+
+      - record: slo:error_budget_burn_rate:ratio_rate_6h
+        expr: slo:sli_error_rate:ratio_rate_6h{job="hslee"} / 0.001
+
+      - record: slo:error_budget_burn_rate:ratio_rate_3d
+        expr: slo:sli_error_rate:ratio_rate_3d{job="hslee"} / 0.001
+
+      # Error budget remaining (%) — 30-day rolling window
+      - record: slo:error_budget_remaining:percent
+        expr: >
+          (
+            1 - (
+              (1 - sum(rate(http_requests_total{job="hslee",status=~"2.."}[30d]))
+                   / sum(rate(http_requests_total{job="hslee"}[30d])))
+              / (1 - 0.999)
+            )
+          ) * 100
+        labels:
+          job: hslee
+
+  - name: slo:error_budget:alerts
+    rules:
+      # Fast burn — critical: 1h + 5m confirmation, threshold >14x
+      # At 14x burn rate, 2% of 30-day error budget is consumed in 1 hour.
+      - alert: SLOFastBurnCritical1h
+        expr: >
+          slo:error_budget_burn_rate:ratio_rate_1h{job="hslee"} > 14
+          and
+          slo:error_budget_burn_rate:ratio_rate_5m{job="hslee"} > 14
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+          team: devops
+        annotations:
+          summary: "SLO fast burn critical — hslee API (1h window)"
+          description: >
+            Error budget burn rate is {{ printf "%.1f" $value }}x the normal rate (1h window).
+            At this rate, 2% of the 30-day error budget will be consumed in 1 hour.
+            Both the 1h and 5m windows exceed the 14x threshold.
+          runbook_url: "https://github.com/hslee/hslee/blob/main/docs/ROLLBACK.md"
+
+      # Fast burn — critical: 6h + 1h confirmation, threshold >14x
+      # Sustained fast burn across longer window confirms incident is not transient.
+      - alert: SLOFastBurnCritical6h
+        expr: >
+          slo:error_budget_burn_rate:ratio_rate_6h{job="hslee"} > 14
+          and
+          slo:error_budget_burn_rate:ratio_rate_1h{job="hslee"} > 14
+        for: 5m
+        labels:
+          severity: critical
+          slo: availability
+          team: devops
+        annotations:
+          summary: "SLO fast burn critical — hslee API (6h window)"
+          description: >
+            Error budget burn rate is {{ printf "%.1f" $value }}x the normal rate (6h window).
+            Sustained fast burn detected across both 6h and 1h windows.
+            Both windows exceed the 14x threshold — incident is not transient.
+          runbook_url: "https://github.com/hslee/hslee/blob/main/docs/ROLLBACK.md"
+
+      # Slow burn — warning: 6h + 1h confirmation, threshold >2x
+      # At 2x burn rate, 30-day budget is exhausted in 15 days.
+      - alert: SLOSlowBurnWarning6h
+        expr: >
+          slo:error_budget_burn_rate:ratio_rate_6h{job="hslee"} > 2
+          and
+          slo:error_budget_burn_rate:ratio_rate_1h{job="hslee"} > 2
+        for: 15m
+        labels:
+          severity: warning
+          slo: availability
+          team: devops
+        annotations:
+          summary: "SLO slow burn warning — hslee API (6h window)"
+          description: >
+            Error budget burn rate is {{ printf "%.1f" $value }}x the normal rate (6h window).
+            At 2x sustained burn, the 30-day error budget will be exhausted in 15 days.
+            Both the 6h and 1h windows exceed the 2x threshold.
+          runbook_url: "https://github.com/hslee/hslee/blob/main/docs/SLO.md"
+
+      # Slow burn — warning: 3d + 6h confirmation, threshold >2x
+      # Long-window early warning — slow persistent drain before it compounds.
+      - alert: SLOSlowBurnWarning3d
+        expr: >
+          slo:error_budget_burn_rate:ratio_rate_3d{job="hslee"} > 2
+          and
+          slo:error_budget_burn_rate:ratio_rate_6h{job="hslee"} > 2
+        for: 1h
+        labels:
+          severity: warning
+          slo: availability
+          team: devops
+        annotations:
+          summary: "SLO slow burn warning — hslee API (3d window)"
+          description: >
+            Error budget burn rate is {{ printf "%.1f" $value }}x the normal rate (3d window).
+            Persistent slow burn confirmed across both 3d and 6h windows.
+            At this rate, the 30-day error budget will be exhausted ahead of schedule.
+          runbook_url: "https://github.com/hslee/hslee/blob/main/docs/SLO.md"
