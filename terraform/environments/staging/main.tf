@@ -56,7 +56,7 @@ module "eks" {
   private_subnet_ids    = module.vpc.private_subnet_ids
   kubernetes_version    = var.kubernetes_version
   public_access_enabled = true
-  public_access_cidrs   = ["0.0.0.0/0"]
+  public_access_cidrs   = ["0.0.0.0/0"] # intentional: staging is open to all for developer access
 
   node_instance_types = ["t3.medium"]
   node_capacity_type  = "SPOT"
