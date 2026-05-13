@@ -21,7 +21,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.64.8
+          version: v2.1.6
 
   test:
     name: Test
@@ -173,6 +173,7 @@ jobs:
     needs: [lint, test]
     permissions:
       contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
 
@@ -190,7 +191,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: scan-target:${{ github.sha }}
           format: json
