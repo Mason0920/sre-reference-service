@@ -62,9 +62,10 @@ kubectl rollout undo deployment/hslee \
   --namespace <NAMESPACE>
 
 # 4. Verify rollback
+# Timeout: 120s for staging, 300s for production
 kubectl rollout status deployment/hslee \
   --namespace <NAMESPACE> \
-  --timeout=300s
+  --timeout=120s   # replace with 300s for production
 ```
 
 ### Roll Back to a Specific SHA
@@ -79,7 +80,7 @@ kubectl set image deployment/hslee \
 
 kubectl rollout status deployment/hslee \
   --namespace <NAMESPACE> \
-  --timeout=300s
+  --timeout=120s   # replace with 300s for production
 ```
 
 ### Verify Health After Manual Rollback

@@ -198,6 +198,8 @@ jobs:
       previous_image: ${{ steps.record.outputs.previous_image }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

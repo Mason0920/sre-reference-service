@@ -60,7 +60,7 @@ The CD workflow uses `GITHUB_TOKEN` (auto-injected) to push images to GHCR — n
 | Environment | Trigger | Registry tag |
 |-------------|---------|--------------|
 | Staging | Automatic on every CI-passing main merge | `ghcr.io/<org>/<repo>:<git-sha>` |
-| Production | Manual promotion (future) | Promote the same SHA image |
+| Production | Manual approval gate (after staging smoke test passes) | `ghcr.io/<org>/<repo>:<git-sha>` |
 
 ## Rollback Procedure
 
