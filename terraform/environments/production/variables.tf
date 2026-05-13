@@ -32,3 +32,9 @@ variable "github_repo" {
   type        = string
   default     = "hslee"
 }
+
+variable "eks_public_access_cidrs" {
+  description = "CIDRs allowed to reach the production EKS API endpoint. Must be restricted to office/VPN IPs."
+  type        = list(string)
+  # No default — must be explicitly set in terraform.tfvars or via -var flag.
+}

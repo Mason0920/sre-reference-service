@@ -56,6 +56,7 @@ module "eks" {
   private_subnet_ids    = module.vpc.private_subnet_ids
   kubernetes_version    = var.kubernetes_version
   public_access_enabled = true
+  public_access_cidrs   = var.eks_public_access_cidrs
 
   node_instance_types = ["t3.large"]
   node_capacity_type  = "ON_DEMAND"

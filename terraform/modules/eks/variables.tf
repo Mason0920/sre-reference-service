@@ -30,6 +30,12 @@ variable "public_access_enabled" {
   default     = true
 }
 
+variable "public_access_cidrs" {
+  description = "CIDRs allowed to reach the public EKS API endpoint. Restrict to known IPs in production."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 variable "node_instance_types" {
   description = "EC2 instance types for worker nodes"
   type        = list(string)
