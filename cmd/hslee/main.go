@@ -9,9 +9,15 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/Mason0920/sre-reference-service/pkg/httpmetrics"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -177,18 +183,28 @@ func main() {
 		addr = ":8080"
 	}
 
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	metrics := httpmetrics.New(reg)
+
+	var ready atomic.Bool
+	ready.Store(true)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/ready", readyHandler(&ready))
 	mux.HandleFunc("/version", versionHandler)
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
 
 	// Wrap with OTel HTTP instrumentation; degrades to no-op if tracing not initialized.
-	// Health checks excluded to reduce trace noise.
+	// Health checks excluded to reduce trace noise. The metrics middleware wraps
+	// the mux directly so it can read the matched route pattern.
 	rootHandler := otelhttp.NewHandler(
-		traceLogMiddleware(mux),
+		traceLogMiddleware(metrics.Middleware(mux)),
 		"hslee-server",
 		otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
 		otelhttp.WithFilter(func(r *http.Request) bool {
-			return r.URL.Path != "/health"
+			return r.URL.Path != "/health" && r.URL.Path != "/ready" && r.URL.Path != "/metrics"
 		}),
 	)
 
@@ -207,7 +223,13 @@ func main() {
 	}()
 
 	<-ctx.Done()
-	logger.Info("shutting down server")
+
+	// Fail readiness first and keep serving for a short drain window, so the
+	// load balancer stops sending new requests before connections close.
+	ready.Store(false)
+	drain := drainDelay()
+	logger.Info("shutting down server", "drain_delay", drain.String())
+	time.Sleep(drain)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -247,4 +269,28 @@ func versionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	l.Debug("version requested", "remote_addr", r.RemoteAddr)
+}
+
+// readyHandler reports 503 once shutdown has started so that Kubernetes and
+// load balancers take the pod out of rotation before the server stops.
+func readyHandler(ready *atomic.Bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if !ready.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"draining"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"ready"}`))
+	}
+}
+
+// drainDelay reads SHUTDOWN_DRAIN_DELAY (Go duration, default 5s).
+func drainDelay() time.Duration {
+	if v := os.Getenv("SHUTDOWN_DRAIN_DELAY"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+			return d
+		}
+	}
+	return 5 * time.Second
 }

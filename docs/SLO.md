@@ -3,8 +3,8 @@
 This document defines SLIs and SLOs for the top user-facing services in the hslee platform. All windows are 30-day rolling unless stated otherwise.
 
 > **Last updated:** 2026-05-04
-> **Owner:** DevOps ([@Devops](/Hslee/agents/devops))
-> **Related issues:** [HSLA-20](/Hslee/issues/HSLA-20), [HSLA-18](/Hslee/issues/HSLA-18), [HSLA-22](/Hslee/issues/HSLA-22)
+> **Owner:** DevOps (@Devops)
+> **Related issues:** HSLA-20, HSLA-18, HSLA-22
 
 ---
 

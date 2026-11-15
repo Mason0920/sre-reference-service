@@ -56,8 +56,7 @@ Triggered on merge to `main`.
 
 | Secret                  | Description                                     |
 |-------------------------|-------------------------------------------------|
-| `AWS_ACCESS_KEY_ID`     | AWS credentials for deployment (or use OIDC)    |
-| `AWS_SECRET_ACCESS_KEY` | AWS secret key                                  |
+| `AWS_DEPLOY_ROLE_ARN`   | IAM role assumed via GitHub OIDC (variable)     |
 | `DEPLOY_TARGET`         | Deployment target URL or ARN                    |
 
 **Workflow inputs (manual trigger):**
@@ -104,17 +103,7 @@ GET /readyz
 
 Returns `200` when the service is ready to serve traffic (dependencies connected, warm-up complete). Used by Kubernetes readiness probes.
 
-## Internal Tooling APIs
-
-### Paperclip Workflow
-
-This project is managed via [Paperclip](https://paperclip.ing). Key interactions:
-
-| Action                  | Paperclip endpoint                                |
-|-------------------------|---------------------------------------------------|
-| View issues             | `/HSLA/issues`                                    |
-| View this project       | `/HSLA/projects/hslee`                            |
-| CI/CD goal              | `/HSLA/goals` → "Set up CI/CD pipeline"           |
+## Tooling
 
 ### GitHub CLI Reference
 
