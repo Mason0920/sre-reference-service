@@ -25,7 +25,7 @@ scrape_configs:
       - targets:
           - node-exporter:9100
 
-  - job_name: hslee-app
+  - job_name: hslee
     metrics_path: /metrics
     static_configs:
       - targets:

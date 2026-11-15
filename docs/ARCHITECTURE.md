@@ -2,7 +2,7 @@
 
 ## System Purpose
 
-This project delivers SRE foundational infrastructure for the `hslee` company. The primary output is a fully automated CI/CD pipeline that enforces code quality, runs tests, produces reproducible builds, and deploys to target environments with rollback capability.
+This project is a reference implementation of SRE foundations around a small Go service (`hslee`). The primary output is a fully automated CI/CD pipeline that enforces code quality, runs tests, produces reproducible builds, and deploys to target environments with rollback capability.
 
 ## High-Level Architecture
 

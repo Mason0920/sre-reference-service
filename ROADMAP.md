@@ -1,4 +1,6 @@
-# ROADMAP — hslee SRE Project
+# ROADMAP
+
+> 프로젝트 초기에 세운 계획 기록이다. `HSLA-n`은 작업 이슈 번호이고, 상태 표기는 작성 시점 기준이다. 실제 진행은 커밋 이력을 본다.
 
 **Goal:** Build a production-grade SRE foundation: automated CI/CD, full observability, infrastructure as code, and robust incident management.
 
@@ -10,11 +12,11 @@ Establish the project skeleton: repository, branch protection, documentation, an
 
 | Issue | Title | Status |
 |-------|-------|--------|
-| [HSLA-2](/HSLA/issues/HSLA-2) | Initialize GitHub repository | in_progress |
-| [HSLA-3](/HSLA/issues/HSLA-3) | Set up branch protection and PR requirements | in_progress |
-| [HSLA-4](/HSLA/issues/HSLA-4) | Create roadmap and generate initial backlog | in_progress |
-| [HSLA-5](/HSLA/issues/HSLA-5) | Document or establish release process | in_progress |
-| [HSLA-6](/HSLA/issues/HSLA-6) | Create initial project documentation | in_progress |
+| HSLA-2 | Initialize GitHub repository | in_progress |
+| HSLA-3 | Set up branch protection and PR requirements | in_progress |
+| HSLA-4 | Create roadmap and generate initial backlog | in_progress |
+| HSLA-5 | Document or establish release process | in_progress |
+| HSLA-6 | Create initial project documentation | in_progress |
 
 **Exit criteria:** Repository exists, main is protected, release process is documented, README and contribution guide are published.
 
@@ -26,14 +28,14 @@ Automate lint, test, build, and deployment for every commit and PR.
 
 | Issue | Title | Status |
 |-------|-------|--------|
-| [HSLA-7](/HSLA/issues/HSLA-7) | Set up CI/CD pipeline | in_progress |
-| [HSLA-8](/HSLA/issues/HSLA-8) | Add linter and configure lint rules | in_progress |
-| [HSLA-9](/HSLA/issues/HSLA-9) | Add lint step to CI workflow | in_progress |
-| [HSLA-10](/HSLA/issues/HSLA-10) | Add test runner and initial tests | todo |
-| [HSLA-11](/HSLA/issues/HSLA-11) | Add test step to CI workflow | todo |
-| [HSLA-12](/HSLA/issues/HSLA-12) | Configure build step | todo |
-| [HSLA-13](/HSLA/issues/HSLA-13) | Set up deployment automation | todo |
-| [HSLA-14](/HSLA/issues/HSLA-14) | Add deployment smoke tests | todo |
+| HSLA-7 | Set up CI/CD pipeline | in_progress |
+| HSLA-8 | Add linter and configure lint rules | in_progress |
+| HSLA-9 | Add lint step to CI workflow | in_progress |
+| HSLA-10 | Add test runner and initial tests | todo |
+| HSLA-11 | Add test step to CI workflow | todo |
+| HSLA-12 | Configure build step | todo |
+| HSLA-13 | Set up deployment automation | todo |
+| HSLA-14 | Add deployment smoke tests | todo |
 
 **Exit criteria:** Every push triggers lint + test + build. Main branch auto-deploys. Smoke tests confirm live health.
 

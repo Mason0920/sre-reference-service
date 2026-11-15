@@ -3,7 +3,7 @@ package config_test
 import (
 	"testing"
 
-	"github.com/hslee/hslee/pkg/config"
+	"github.com/Mason0920/sre-reference-service/pkg/config"
 )
 
 func TestLoad_Success(t *testing.T) {

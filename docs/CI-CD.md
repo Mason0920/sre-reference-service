@@ -31,7 +31,7 @@ PR / push ──► CI (.github/workflows/ci.yml)
 
 To (re-)apply rules after repo recreation:
 ```bash
-./scripts/setup-branch-protection.sh Mason0920/hslee
+./scripts/setup-branch-protection.sh Mason0920/sre-reference-service
 ```
 
 ## CI Workflow
@@ -65,8 +65,8 @@ Configure in GitHub → Settings → Secrets and variables → Actions.
 
 | Name | Kind | Purpose |
 |------|------|---------|
-| `AWS_ACCESS_KEY_ID` | Secret | IAM key for EKS/ECR access |
-| `AWS_SECRET_ACCESS_KEY` | Secret | IAM secret |
+| `AWS_DEPLOY_ROLE_ARN` | Variable | IAM role assumed via GitHub OIDC (no static keys) |
+| `DEPLOY_ENABLED` | Variable | `true` to run the CD workflow |
 | `AWS_REGION` | Variable | e.g. `ap-northeast-2` |
 | `EKS_CLUSTER_NAME_STAGING` | Variable | Staging EKS cluster name |
 | `K8S_NAMESPACE_STAGING` | Variable | Kubernetes namespace for staging |
