@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/Mason0920/sre-reference-service/pkg/httpmetrics"
+	"github.com/Mason0920/sre-reference-service/pkg/lifecycle"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -187,12 +187,11 @@ func main() {
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	metrics := httpmetrics.New(reg)
 
-	var ready atomic.Bool
-	ready.Store(true)
+	readiness := lifecycle.NewReadiness()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
-	mux.HandleFunc("/ready", readyHandler(&ready))
+	mux.HandleFunc("/ready", readiness.Handler())
 	mux.HandleFunc("/version", versionHandler)
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
 
@@ -226,8 +225,8 @@ func main() {
 
 	// Fail readiness first and keep serving for a short drain window, so the
 	// load balancer stops sending new requests before connections close.
-	ready.Store(false)
-	drain := drainDelay()
+	readiness.StartDraining()
+	drain := lifecycle.DrainDelay()
 	logger.Info("shutting down server", "drain_delay", drain.String())
 	time.Sleep(drain)
 
@@ -269,28 +268,4 @@ func versionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	l.Debug("version requested", "remote_addr", r.RemoteAddr)
-}
-
-// readyHandler reports 503 once shutdown has started so that Kubernetes and
-// load balancers take the pod out of rotation before the server stops.
-func readyHandler(ready *atomic.Bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if !ready.Load() {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"status":"draining"}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{"status":"ready"}`))
-	}
-}
-
-// drainDelay reads SHUTDOWN_DRAIN_DELAY (Go duration, default 5s).
-func drainDelay() time.Duration {
-	if v := os.Getenv("SHUTDOWN_DRAIN_DELAY"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
-			return d
-		}
-	}
-	return 5 * time.Second
 }

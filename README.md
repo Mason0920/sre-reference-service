@@ -14,7 +14,7 @@ A small Go service wrapped with the SRE basics: CI/CD with rollback, metrics/log
 
 | 영역 | 내용 | 위치 |
 |---|---|---|
-| 서비스 | Go `net/http` 서버. `/health`, `/ready`, `/version`, `/metrics`(라우트 패턴 기준 RED 지표), 구조화 로그(slog), OpenTelemetry 트레이싱. 종료 신호를 받으면 `/ready`를 먼저 503으로 바꾸고 drain 시간(`SHUTDOWN_DRAIN_DELAY`, 기본 5s) 뒤에 서버를 닫는다 | `cmd/hslee`, `pkg/httpmetrics`, `pkg/config` |
+| 서비스 | Go `net/http` 서버. `/health`, `/ready`, `/version`, `/metrics`(라우트 패턴 기준 RED 지표), 구조화 로그(slog), OpenTelemetry 트레이싱. 종료 신호를 받으면 `/ready`를 먼저 503으로 바꾸고 drain 시간(`SHUTDOWN_DRAIN_DELAY`, 기본 5s) 뒤에 서버를 닫는다 | `cmd/hslee`, `pkg/httpmetrics`, `pkg/lifecycle`, `pkg/config` |
 | CI | golangci-lint v2, `go test -race` + 커버리지, govulncheck, 바이너리 빌드 | `.github/workflows/ci.yml` |
 | CD | GHCR 푸시 → EKS 스테이징 배포 → 스모크 테스트 → 실패 시 이전 이미지로 자동 롤백. AWS 인증은 GitHub OIDC 역할(정적 키 없음) | `.github/workflows/cd.yml`, `cmd/smoketest` |
 | 관측성 | Prometheus, Grafana, Loki + Promtail, Jaeger, Alertmanager(Slack), blackbox exporter를 Docker Compose로 | `observability/` |
